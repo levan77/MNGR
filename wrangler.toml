@@ -1,0 +1,10 @@
+name = "salon-booking-system"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+[vars]
+# Add your environment variables here for production.
+# For secrets, use: wrangler pages secret put VARIABLE_NAME
+# NEXT_PUBLIC_SUPABASE_URL = "https://your-project.supabase.co"
+# NEXT_PUBLIC_SUPABASE_ANON_KEY = "your-anon-key"
