@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import {
   LayoutGrid, Calendar, List, Users, Scissors,
-  Plus, X, ChevronLeft, ChevronRight, Check, Clock,
+  Plus, X, ChevronLeft, ChevronRight, Check, Clock, LogOut,
 } from 'lucide-react';
+import { logoutAction } from '@/app/admin/login/actions';
 import {
   PROFESSIONALS, SERVICES, DEPARTMENTS, SEED_BOOKINGS,
   INITIAL_WORKING_HOURS, ALL_TIME_SLOTS,
@@ -409,7 +410,11 @@ export default function AdminDashboard() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-5 border-b border-luxe-border">
         <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
-        <span className="text-luxe-muted text-xs tracking-widest uppercase">Admin</span>
+        <form action={logoutAction}>
+          <button type="submit" className="flex items-center gap-2 text-luxe-muted text-xs tracking-widest uppercase hover:text-luxe-cream transition-colors">
+            <LogOut size={14} /> Logout
+          </button>
+        </form>
       </header>
 
       {/* Tabs */}
