@@ -5,4 +5,5 @@ interface CloudflareEnv {
   ASSETS: Fetcher;
   MASTER_PASSWORD: string;
   SALON_CREDENTIALS: string;
+  [key: string]: unknown;
 }
