@@ -8,7 +8,12 @@ directory = ".open-next/assets"
 binding = "ASSETS"
 
 [vars]
-# Add environment variables here for production.
-# For secrets, use: wrangler secret put VARIABLE_NAME
-# NEXT_PUBLIC_SUPABASE_URL = "https://your-project.supabase.co"
-# NEXT_PUBLIC_SUPABASE_ANON_KEY = "your-anon-key"
+# Secrets — set via: npx wrangler secret put SECRET_NAME --name mngr
+#
+# MASTER_PASSWORD        — password for the "master" super admin account
+#                          also used as the HMAC signing key for session cookies
+#
+# SALON_CREDENTIALS      — JSON array of salon admin accounts, e.g.:
+#   [{"username":"tbilisi","password":"pw1","salon_id":"d1"},
+#    {"username":"batumi","password":"pw2","salon_id":"d2"},
+#    {"username":"kutaisi","password":"pw3","salon_id":"d3"}]

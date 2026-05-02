@@ -1,36 +1,71 @@
-const COOKIE_NAME = 'admin_session';
-const SESSION_DATA = 'admin-session-v1';
+export type SessionPayload =
+  | { role: 'super_admin' }
+  | { role: 'salon_admin'; salon_id: string };
 
-async function deriveToken(password: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
+const COOKIE = 'admin_session';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toB64url(s: string): string {
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function fromB64url(s: string): string {
+  return atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+}
+
+function bufToB64url(buf: ArrayBuffer): string {
+  return toB64url(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+async function signingKey(): Promise<CryptoKey> {
+  const secret = process.env.MASTER_PASSWORD ?? 'dev-fallback-change-me';
+  return crypto.subtle.importKey(
     'raw',
-    enc.encode(password),
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign'],
+    ['sign', 'verify'],
   );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_DATA));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)));
 }
 
-export async function createSessionCookie(password: string): Promise<string> {
-  const token = await deriveToken(password);
-  return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`;
+// ─── Token: <b64url(payload)>.<b64url(hmac)> ──────────────────────────────────
+
+export async function signSession(payload: SessionPayload): Promise<string> {
+  const data = toB64url(JSON.stringify(payload));
+  const key = await signingKey();
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return `${data}.${bufToB64url(sig)}`;
 }
 
-export async function validateSession(cookieHeader: string | null): Promise<boolean> {
-  if (!cookieHeader) return false;
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!adminPassword) return false;
-
-  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`));
-  if (!match) return false;
-
-  const expected = await deriveToken(adminPassword);
-  return match[1] === expected;
+export async function verifySession(token: string): Promise<SessionPayload | null> {
+  try {
+    const dot = token.lastIndexOf('.');
+    if (dot < 0) return null;
+    const data = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
+    const key = await signingKey();
+    const rawSig = Uint8Array.from(fromB64url(sig), c => c.charCodeAt(0));
+    const ok = await crypto.subtle.verify('HMAC', key, rawSig, new TextEncoder().encode(data));
+    if (!ok) return null;
+    return JSON.parse(fromB64url(data)) as SessionPayload;
+  } catch {
+    return null;
+  }
 }
 
-export function clearSessionCookie(): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+// ─── Cookie helpers ───────────────────────────────────────────────────────────
+
+export function extractToken(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
+  return m ? m[1] : null;
 }
+
+export async function validateRequest(cookieHeader: string | null): Promise<SessionPayload | null> {
+  const token = extractToken(cookieHeader);
+  return token ? verifySession(token) : null;
+}
+
+export const COOKIE_NAME = COOKIE;
+export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;

@@ -2,30 +2,45 @@
 
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { createSessionCookie } from '@/lib/auth';
+import { signSession, COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/auth';
+import type { SessionPayload } from '@/lib/auth';
+
+type SalonCredential = { username: string; password: string; salon_id: string };
 
 export async function loginAction(formData: FormData) {
+  const username = (formData.get('username') as string)?.trim().toLowerCase();
   const password = formData.get('password') as string;
-  const adminPassword = process.env.ADMIN_PASSWORD;
 
-  if (!adminPassword || password !== adminPassword) {
-    redirect('/admin/login?error=1');
+  if (!username || !password) redirect('/admin/login?error=1');
+
+  let payload: SessionPayload | null = null;
+
+  if (username === 'master') {
+    const masterPw = process.env.MASTER_PASSWORD;
+    if (masterPw && password === masterPw) payload = { role: 'super_admin' };
+  } else {
+    try {
+      const salons: SalonCredential[] = JSON.parse(process.env.SALON_CREDENTIALS ?? '[]');
+      const match = salons.find(s => s.username === username && s.password === password);
+      if (match) payload = { role: 'salon_admin', salon_id: match.salon_id };
+    } catch {}
   }
 
-  const cookieStr = await createSessionCookie(password);
-  const value = cookieStr.split('=').slice(1).join('=').split(';')[0];
-  (await cookies()).set('admin_session', value, {
+  if (!payload) redirect('/admin/login?error=1');
+
+  const token = await signSession(payload);
+  (await cookies()).set(COOKIE_NAME, token, {
     path: '/',
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: COOKIE_MAX_AGE,
   });
 
   redirect('/admin');
 }
 
 export async function logoutAction() {
-  (await cookies()).delete('admin_session');
+  (await cookies()).delete(COOKIE_NAME);
   redirect('/admin/login');
 }

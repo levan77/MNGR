@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateSession } from '@/lib/auth';
+import { validateRequest } from '@/lib/auth';
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname === '/admin/login') return NextResponse.next();
 
-  const cookieHeader = req.headers.get('cookie');
-  const isValid = await validateSession(cookieHeader);
+  const session = await validateRequest(req.headers.get('cookie'));
 
-  if (!isValid) {
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = '/admin/login';
-    return NextResponse.redirect(loginUrl);
+  if (!session) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/admin/login';
+    return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  // Forward session into request headers so server components can read it
+  const reqHeaders = new Headers(req.headers);
+  reqHeaders.set('x-session-role', session.role);
+  if (session.role === 'salon_admin') {
+    reqHeaders.set('x-session-salon-id', session.salon_id);
+  }
+
+  return NextResponse.next({ request: { headers: reqHeaders } });
 }
 
 export const config = {

@@ -3,15 +3,15 @@
 import { useState } from 'react';
 import {
   LayoutGrid, Calendar, List, Users, Scissors,
-  Plus, X, ChevronLeft, ChevronRight, Check, Clock, LogOut,
+  ChevronLeft, ChevronRight, Check, Clock, LogOut,
 } from 'lucide-react';
-import { logoutAction } from '@/app/admin/login/actions';
 import {
   PROFESSIONALS, SERVICES, DEPARTMENTS, SEED_BOOKINGS,
   INITIAL_WORKING_HOURS, ALL_TIME_SLOTS,
   type Booking, type BookingStatus, type WorkingHours,
 } from '@/lib/data';
-import { localDateString, getWeekDays, formatShortDate, getDayOfWeek } from '@/lib/dates';
+import { localDateString, getWeekDays, formatShortDate } from '@/lib/dates';
+import { logoutAction } from '@/app/admin/login/actions';
 
 type Tab = 'today' | 'calendar' | 'bookings' | 'staff' | 'services';
 
@@ -46,7 +46,6 @@ function TodayView({ bookings }: { bookings: Booking[] }) {
           </div>
         ))}
       </div>
-
       {todayBks.length === 0 ? (
         <p className="text-luxe-muted text-center py-12 text-sm">No appointments today.</p>
       ) : (
@@ -103,7 +102,6 @@ function CalendarView({
           <ChevronRight size={18} />
         </button>
       </div>
-
       <div className="grid grid-cols-7 gap-1 text-center">
         {days.map(day => {
           const dayBks = bookings.filter(b => b.date === day);
@@ -111,28 +109,26 @@ function CalendarView({
           return (
             <div key={day} className={`border ${isToday ? 'border-luxe-cream' : 'border-luxe-border'} p-2 min-h-[80px]`}>
               <p className={`text-xs mb-2 ${isToday ? 'text-luxe-cream' : 'text-luxe-muted'}`}>
-                {new Date(day + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }).slice(0,2)}{' '}
+                {new Date(day + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }).slice(0, 2)}{' '}
                 {new Date(day + 'T00:00:00').getDate()}
               </p>
               <div className="space-y-1">
-                {dayBks.slice(0,3).map(b => (
+                {dayBks.slice(0, 3).map(b => (
                   <div key={b.id} className="text-xs px-1 py-0.5 bg-luxe-surface border border-luxe-border truncate text-luxe-muted">
                     {b.time}
                   </div>
                 ))}
-                {dayBks.length > 3 && <p className="text-xs text-luxe-muted">+{dayBks.length-3}</p>}
+                {dayBks.length > 3 && <p className="text-xs text-luxe-muted">+{dayBks.length - 3}</p>}
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* Upcoming bookings in week */}
       <div className="space-y-2 pt-2">
         {days.flatMap(day =>
           bookings
             .filter(b => b.date === day)
-            .sort((a,b) => a.time.localeCompare(b.time))
+            .sort((a, b) => a.time.localeCompare(b.time))
             .map(b => {
               const pro = PROFESSIONALS.find(p => p.id === b.professionalId);
               const svc = SERVICES.find(s => s.id === b.serviceId);
@@ -165,9 +161,10 @@ function CalendarView({
 
 // ─── Bookings Tab ─────────────────────────────────────────────────────────────
 function BookingsView({
-  bookings, onStatusChange,
+  bookings, professionals, onStatusChange,
 }: {
   bookings: Booking[];
+  professionals: typeof PROFESSIONALS;
   onStatusChange: (id: string, status: BookingStatus) => void;
 }) {
   const [filterStatus, setFilterStatus] = useState<BookingStatus | 'all'>('all');
@@ -198,10 +195,9 @@ function BookingsView({
           className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-3 py-2 focus:outline-none"
         >
           <option value="all">All professionals</option>
-          {PROFESSIONALS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
-
       <div className="space-y-2">
         {filtered.length === 0 && (
           <p className="text-luxe-muted text-sm text-center py-8">No bookings found.</p>
@@ -249,12 +245,12 @@ function BookingsView({
 }
 
 // ─── Staff Tab ────────────────────────────────────────────────────────────────
-function StaffView() {
+function StaffView({ professionals }: { professionals: typeof PROFESSIONALS }) {
   const [hours, setHours] = useState<Record<string, WorkingHours[]>>(
     JSON.parse(JSON.stringify(INITIAL_WORKING_HOURS))
   );
-  const [selectedPro, setSelectedPro] = useState(PROFESSIONALS[0].id);
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const [selectedPro, setSelectedPro] = useState(professionals[0]?.id ?? '');
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   function toggle(proId: string, dayIdx: number) {
     setHours(prev => {
@@ -273,13 +269,15 @@ function StaffView() {
     });
   }
 
-  const pro = PROFESSIONALS.find(p => p.id === selectedPro)!;
-  const proHours = hours[selectedPro];
+  const pro = professionals.find(p => p.id === selectedPro);
+  const proHours = hours[selectedPro] ?? [];
+
+  if (!pro) return <p className="text-luxe-muted text-sm text-center py-8">No staff at this location.</p>;
 
   return (
     <div className="space-y-5">
       <div className="flex gap-2 flex-wrap">
-        {PROFESSIONALS.map(p => (
+        {professionals.map(p => (
           <button
             key={p.id}
             onClick={() => setSelectedPro(p.id)}
@@ -291,7 +289,6 @@ function StaffView() {
           </button>
         ))}
       </div>
-
       <div className="border border-luxe-border p-4 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-luxe-surface border border-luxe-border flex items-center justify-center text-luxe-muted text-xs">
@@ -302,11 +299,10 @@ function StaffView() {
             <p className="text-luxe-muted text-xs">{pro.title}</p>
           </div>
         </div>
-
         <div className="space-y-2">
           {days.map((day, idx) => {
             const h = proHours[idx];
-            const isOn = h !== null;
+            const isOn = h !== null && h !== undefined;
             return (
               <div key={day} className="flex items-center gap-3">
                 <span className="text-luxe-muted text-xs w-8">{day}</span>
@@ -316,19 +312,11 @@ function StaffView() {
                 />
                 {isOn && h && (
                   <>
-                    <select
-                      value={h.s}
-                      onChange={e => updateHour(selectedPro, idx, 's', e.target.value)}
-                      className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1"
-                    >
+                    <select value={h.s} onChange={e => updateHour(selectedPro, idx, 's', e.target.value)} className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1">
                       {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <span className="text-luxe-muted text-xs">–</span>
-                    <select
-                      value={h.e}
-                      onChange={e => updateHour(selectedPro, idx, 'e', e.target.value)}
-                      className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1"
-                    >
+                    <select value={h.e} onChange={e => updateHour(selectedPro, idx, 'e', e.target.value)} className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1">
                       {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </>
@@ -347,14 +335,6 @@ function StaffView() {
 function ServicesView() {
   const [active, setActive] = useState<Set<string>>(new Set(SERVICES.map(s => s.id)));
 
-  function toggle(id: string) {
-    setActive(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
   return (
     <div className="space-y-3">
       {SERVICES.map(svc => {
@@ -362,7 +342,7 @@ function ServicesView() {
         return (
           <div key={svc.id} className={`flex items-start gap-4 p-4 border transition-colors ${isActive ? 'border-luxe-border' : 'border-luxe-border/40 opacity-50'}`}>
             <button
-              onClick={() => toggle(svc.id)}
+              onClick={() => setActive(prev => { const n = new Set(prev); n.has(svc.id) ? n.delete(svc.id) : n.add(svc.id); return n; })}
               className={`w-5 h-5 border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${isActive ? 'border-luxe-cream bg-luxe-cream' : 'border-luxe-border'}`}
             >
               {isActive && <Check size={12} className="text-luxe-bg" />}
@@ -389,9 +369,25 @@ function ServicesView() {
 }
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
-export default function AdminDashboard() {
+interface AdminDashboardProps {
+  departmentId?: string; // undefined = show all (super admin drill-in passes one)
+  showHeader?: boolean;  // false when embedded inside SuperAdminDashboard
+}
+
+export default function AdminDashboard({ departmentId, showHeader = true }: AdminDashboardProps) {
   const [tab, setTab] = useState<Tab>('today');
-  const [bookings, setBookings] = useState<Booking[]>(SEED_BOOKINGS);
+
+  const professionals = departmentId
+    ? PROFESSIONALS.filter(p => p.departmentId === departmentId)
+    : PROFESSIONALS;
+
+  const [bookings, setBookings] = useState<Booking[]>(
+    departmentId
+      ? SEED_BOOKINGS.filter(b => b.departmentId === departmentId)
+      : SEED_BOOKINGS
+  );
+
+  const dept = departmentId ? DEPARTMENTS.find(d => d.id === departmentId) : null;
 
   function handleStatusChange(id: string, status: BookingStatus) {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
@@ -406,27 +402,28 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-luxe-bg flex flex-col">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-5 border-b border-luxe-border">
-        <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
-        <form action={logoutAction}>
-          <button type="submit" className="flex items-center gap-2 text-luxe-muted text-xs tracking-widest uppercase hover:text-luxe-cream transition-colors">
-            <LogOut size={14} /> Logout
-          </button>
-        </form>
-      </header>
+    <div className={showHeader ? 'min-h-screen bg-luxe-bg flex flex-col' : 'flex flex-col'}>
+      {showHeader && (
+        <header className="flex items-center justify-between px-6 py-5 border-b border-luxe-border">
+          <div>
+            <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
+            {dept && <p className="text-luxe-muted text-xs mt-0.5">{dept.name}</p>}
+          </div>
+          <form action={logoutAction}>
+            <button type="submit" className="flex items-center gap-2 text-luxe-muted text-xs tracking-widest uppercase hover:text-luxe-cream transition-colors">
+              <LogOut size={14} /> Logout
+            </button>
+          </form>
+        </header>
+      )}
 
-      {/* Tabs */}
       <nav className="flex border-b border-luxe-border px-6 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-4 py-3.5 text-xs tracking-wider uppercase whitespace-nowrap border-b-2 transition-colors ${
-              tab === t.id
-                ? 'border-luxe-cream text-luxe-cream'
-                : 'border-transparent text-luxe-muted hover:text-luxe-cream'
+              tab === t.id ? 'border-luxe-cream text-luxe-cream' : 'border-transparent text-luxe-muted hover:text-luxe-cream'
             }`}
           >
             {t.icon} {t.label}
@@ -434,12 +431,11 @@ export default function AdminDashboard() {
         ))}
       </nav>
 
-      {/* Content */}
       <main className="flex-1 px-6 py-6 max-w-3xl w-full mx-auto">
         {tab === 'today' && <TodayView bookings={bookings} />}
         {tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} />}
-        {tab === 'bookings' && <BookingsView bookings={bookings} onStatusChange={handleStatusChange} />}
-        {tab === 'staff' && <StaffView />}
+        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={professionals} onStatusChange={handleStatusChange} />}
+        {tab === 'staff' && <StaffView professionals={professionals} />}
         {tab === 'services' && <ServicesView />}
       </main>
     </div>

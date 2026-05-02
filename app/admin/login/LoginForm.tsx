@@ -4,8 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { loginAction } from './actions';
 
 export default function LoginForm() {
-  const params = useSearchParams();
-  const error = params.get('error');
+  const error = useSearchParams().get('error');
 
   return (
     <main className="min-h-screen flex items-center justify-center px-6 bg-luxe-bg">
@@ -16,6 +15,20 @@ export default function LoginForm() {
         </div>
 
         <form action={loginAction} className="space-y-4">
+          <div className="space-y-1">
+            <label htmlFor="username" className="text-luxe-muted text-xs tracking-widest uppercase">
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              autoComplete="username"
+              required
+              className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream px-4 py-3 text-sm focus:outline-none focus:border-luxe-cream transition-colors"
+            />
+          </div>
+
           <div className="space-y-1">
             <label htmlFor="password" className="text-luxe-muted text-xs tracking-widest uppercase">
               Password
@@ -31,7 +44,7 @@ export default function LoginForm() {
           </div>
 
           {error && (
-            <p className="text-red-400 text-xs tracking-wider">Incorrect password.</p>
+            <p className="text-red-400 text-xs tracking-wider">Invalid username or password.</p>
           )}
 
           <button
