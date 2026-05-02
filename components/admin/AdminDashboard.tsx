@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   LayoutGrid, Calendar, List, Users, Scissors,
-  ChevronLeft, ChevronRight, Check, Clock, LogOut,
+  ChevronLeft, ChevronRight, Check, Clock, LogOut, Plus, Trash2, X,
 } from 'lucide-react';
 import {
   PROFESSIONALS, SERVICES, DEPARTMENTS, SEED_BOOKINGS,
@@ -245,146 +245,285 @@ function BookingsView({
 }
 
 // ─── Staff Tab ────────────────────────────────────────────────────────────────
-function StaffView({ professionals }: { professionals: typeof PROFESSIONALS }) {
+const DEFAULT_HOURS: WorkingHours[] = [null, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '18:00' }];
+
+function StaffView({
+  professionals,
+  departmentId,
+  onAdd,
+  onRemove,
+}: {
+  professionals: typeof PROFESSIONALS;
+  departmentId?: string;
+  onAdd: (p: typeof PROFESSIONALS[0]) => void;
+  onRemove: (id: string) => void;
+}) {
   const [hours, setHours] = useState<Record<string, WorkingHours[]>>(
-    JSON.parse(JSON.stringify(INITIAL_WORKING_HOURS))
+    Object.fromEntries(professionals.map(p => [p.id, [...DEFAULT_HOURS]]))
   );
   const [selectedPro, setSelectedPro] = useState(professionals[0]?.id ?? '');
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: '', title: '' });
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   function toggle(proId: string, dayIdx: number) {
     setHours(prev => {
-      const next = { ...prev, [proId]: [...prev[proId]] };
-      next[proId][dayIdx] = next[proId][dayIdx] ? null : { s: '09:00', e: '19:00' };
-      return next;
+      const cur = prev[proId] ?? [...DEFAULT_HOURS];
+      const next = [...cur];
+      next[dayIdx] = next[dayIdx] ? null : { s: '09:00', e: '19:00' };
+      return { ...prev, [proId]: next };
     });
   }
 
   function updateHour(proId: string, dayIdx: number, field: 's' | 'e', value: string) {
     setHours(prev => {
-      const next = { ...prev, [proId]: [...prev[proId]] };
-      const cur = next[proId][dayIdx];
-      if (cur) next[proId][dayIdx] = { ...cur, [field]: value };
-      return next;
+      const cur = [...(prev[proId] ?? DEFAULT_HOURS)];
+      const h = cur[dayIdx];
+      if (h) cur[dayIdx] = { ...h, [field]: value };
+      return { ...prev, [proId]: cur };
     });
   }
 
-  const pro = professionals.find(p => p.id === selectedPro);
-  const proHours = hours[selectedPro] ?? [];
+  function handleAdd() {
+    if (!form.name.trim()) return;
+    const id = `p-${Date.now()}`;
+    const initials = form.name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    const newPro: typeof PROFESSIONALS[0] = {
+      id,
+      name: form.name.trim(),
+      title: form.title.trim() || 'Stylist',
+      departmentId: departmentId ?? 'd1',
+      avatar: initials,
+      specialties: [],
+    };
+    setHours(prev => ({ ...prev, [id]: [...DEFAULT_HOURS] }));
+    onAdd(newPro);
+    setSelectedPro(id);
+    setForm({ name: '', title: '' });
+    setAdding(false);
+  }
 
-  if (!pro) return <p className="text-luxe-muted text-sm text-center py-8">No staff at this location.</p>;
+  function handleRemove(id: string) {
+    onRemove(id);
+    if (selectedPro === id) setSelectedPro(professionals.find(p => p.id !== id)?.id ?? '');
+  }
+
+  const pro = professionals.find(p => p.id === selectedPro);
+  const proHours = hours[selectedPro] ?? DEFAULT_HOURS;
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-2 flex-wrap">
+      {/* Staff chips + add button */}
+      <div className="flex gap-2 flex-wrap items-center">
         {professionals.map(p => (
-          <button
-            key={p.id}
-            onClick={() => setSelectedPro(p.id)}
-            className={`px-3 py-1.5 text-xs border transition-colors ${
-              p.id === selectedPro ? 'border-luxe-cream text-luxe-cream' : 'border-luxe-border text-luxe-muted hover:border-luxe-muted'
-            }`}
-          >
-            {p.name.split(' ')[0]}
-          </button>
+          <div key={p.id} className={`flex items-center gap-1 border transition-colors ${p.id === selectedPro ? 'border-luxe-cream' : 'border-luxe-border'}`}>
+            <button
+              onClick={() => setSelectedPro(p.id)}
+              className={`px-3 py-1.5 text-xs transition-colors ${p.id === selectedPro ? 'text-luxe-cream' : 'text-luxe-muted hover:text-luxe-cream'}`}
+            >
+              {p.name.split(' ')[0]}
+            </button>
+            <button
+              onClick={() => handleRemove(p.id)}
+              className="pr-2 text-luxe-border hover:text-red-400 transition-colors"
+              title="Remove"
+            >
+              <X size={12} />
+            </button>
+          </div>
         ))}
+        <button
+          onClick={() => setAdding(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-dashed border-luxe-border text-luxe-muted hover:border-luxe-cream hover:text-luxe-cream transition-colors"
+        >
+          <Plus size={12} /> Add Staff
+        </button>
       </div>
-      <div className="border border-luxe-border p-4 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-luxe-surface border border-luxe-border flex items-center justify-center text-luxe-muted text-xs">
-            {pro.avatar}
+
+      {/* Add staff form */}
+      {adding && (
+        <div className="border border-luxe-border p-4 space-y-3">
+          <p className="text-luxe-cream text-xs tracking-wider uppercase">New Staff Member</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-luxe-muted text-xs">Full Name</label>
+              <input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Ana Kvaratskhelia"
+                className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-2 focus:outline-none focus:border-luxe-cream"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-luxe-muted text-xs">Title</label>
+              <input
+                value={form.title}
+                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="Senior Stylist"
+                className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-2 focus:outline-none focus:border-luxe-cream"
+              />
+            </div>
           </div>
-          <div>
-            <p className="text-luxe-cream text-sm">{pro.name}</p>
-            <p className="text-luxe-muted text-xs">{pro.title}</p>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setAdding(false)} className="px-4 py-2 text-xs border border-luxe-border text-luxe-muted hover:text-luxe-cream transition-colors">Cancel</button>
+            <button onClick={handleAdd} className="px-4 py-2 text-xs bg-luxe-cream text-luxe-bg hover:bg-luxe-accent transition-colors">Add</button>
           </div>
         </div>
-        <div className="space-y-2">
-          {days.map((day, idx) => {
-            const h = proHours[idx];
-            const isOn = h !== null && h !== undefined;
-            return (
-              <div key={day} className="flex items-center gap-3">
-                <span className="text-luxe-muted text-xs w-8">{day}</span>
-                <button
-                  onClick={() => toggle(selectedPro, idx)}
-                  className={`w-8 h-4 rounded-full transition-colors ${isOn ? 'bg-luxe-cream' : 'bg-luxe-border'}`}
-                />
-                {isOn && h && (
-                  <>
-                    <select value={h.s} onChange={e => updateHour(selectedPro, idx, 's', e.target.value)} className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1">
-                      {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <span className="text-luxe-muted text-xs">–</span>
-                    <select value={h.e} onChange={e => updateHour(selectedPro, idx, 'e', e.target.value)} className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1">
-                      {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </>
-                )}
-                {!isOn && <span className="text-luxe-muted text-xs">Off</span>}
-              </div>
-            );
-          })}
+      )}
+
+      {/* Working hours editor */}
+      {pro && (
+        <div className="border border-luxe-border p-4 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-luxe-surface border border-luxe-border flex items-center justify-center text-luxe-muted text-xs">
+              {pro.avatar}
+            </div>
+            <div>
+              <p className="text-luxe-cream text-sm">{pro.name}</p>
+              <p className="text-luxe-muted text-xs">{pro.title}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {days.map((day, idx) => {
+              const h = proHours[idx];
+              const isOn = h !== null && h !== undefined;
+              return (
+                <div key={day} className="flex items-center gap-3">
+                  <span className="text-luxe-muted text-xs w-8">{day}</span>
+                  <button
+                    onClick={() => toggle(selectedPro, idx)}
+                    className={`w-8 h-4 rounded-full transition-colors ${isOn ? 'bg-luxe-cream' : 'bg-luxe-border'}`}
+                  />
+                  {isOn && h && (
+                    <>
+                      <select value={h.s} onChange={e => updateHour(selectedPro, idx, 's', e.target.value)} className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1">
+                        {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <span className="text-luxe-muted text-xs">–</span>
+                      <select value={h.e} onChange={e => updateHour(selectedPro, idx, 'e', e.target.value)} className="bg-luxe-surface border border-luxe-border text-luxe-muted text-xs px-2 py-1">
+                        {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </>
+                  )}
+                  {!isOn && <span className="text-luxe-muted text-xs">Off</span>}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
+
+      {professionals.length === 0 && !adding && (
+        <p className="text-luxe-muted text-sm text-center py-8">No staff at this location.</p>
+      )}
     </div>
   );
 }
 
 // ─── Services Tab ─────────────────────────────────────────────────────────────
-function ServicesView() {
-  const [active, setActive] = useState<Set<string>>(new Set(SERVICES.map(s => s.id)));
+function ServicesView({
+  services,
+  onAdd,
+  onRemove,
+}: {
+  services: typeof SERVICES;
+  onAdd: (s: typeof SERVICES[0]) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: '', tagline: '', duration: '60', price: '' });
+
+  function handleAdd() {
+    if (!form.name.trim() || !form.price) return;
+    onAdd({
+      id: `s-${Date.now()}`,
+      name: form.name.trim(),
+      tagline: form.tagline.trim(),
+      duration: parseInt(form.duration) || 60,
+      buffer: 10,
+      price: parseInt(form.price) || 0,
+    });
+    setForm({ name: '', tagline: '', duration: '60', price: '' });
+    setAdding(false);
+  }
 
   return (
     <div className="space-y-3">
-      {SERVICES.map(svc => {
-        const isActive = active.has(svc.id);
-        return (
-          <div key={svc.id} className={`flex items-start gap-4 p-4 border transition-colors ${isActive ? 'border-luxe-border' : 'border-luxe-border/40 opacity-50'}`}>
-            <button
-              onClick={() => setActive(prev => { const n = new Set(prev); n.has(svc.id) ? n.delete(svc.id) : n.add(svc.id); return n; })}
-              className={`w-5 h-5 border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${isActive ? 'border-luxe-cream bg-luxe-cream' : 'border-luxe-border'}`}
-            >
-              {isActive && <Check size={12} className="text-luxe-bg" />}
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-luxe-cream text-sm">{svc.name}</p>
-                  <p className="text-luxe-muted text-xs mt-0.5">{svc.tagline}</p>
-                </div>
-                <div className="text-right shrink-0">
+      {services.map(svc => (
+        <div key={svc.id} className="flex items-start gap-4 p-4 border border-luxe-border">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-luxe-cream text-sm">{svc.name}</p>
+                <p className="text-luxe-muted text-xs mt-0.5">{svc.tagline}</p>
+              </div>
+              <div className="flex items-start gap-3 shrink-0">
+                <div className="text-right">
                   <p className="text-luxe-accent text-sm">₾{svc.price}</p>
                   <p className="text-luxe-muted text-xs flex items-center gap-1 mt-0.5">
                     <Clock size={10} /> {svc.duration}m
                   </p>
                 </div>
+                <button onClick={() => onRemove(svc.id)} className="text-luxe-border hover:text-red-400 transition-colors mt-0.5" title="Remove">
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
           </div>
-        );
-      })}
+        </div>
+      ))}
+
+      {/* Add service form */}
+      {adding ? (
+        <div className="border border-luxe-border p-4 space-y-3">
+          <p className="text-luxe-cream text-xs tracking-wider uppercase">New Service</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-1">
+              <label className="text-luxe-muted text-xs">Service Name</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Signature Cut & Style" className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-2 focus:outline-none focus:border-luxe-cream" />
+            </div>
+            <div className="col-span-2 space-y-1">
+              <label className="text-luxe-muted text-xs">Tagline</label>
+              <input value={form.tagline} onChange={e => setForm(f => ({ ...f, tagline: e.target.value }))} placeholder="Short description" className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-2 focus:outline-none focus:border-luxe-cream" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-luxe-muted text-xs">Duration (min)</label>
+              <input type="number" value={form.duration} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-2 focus:outline-none focus:border-luxe-cream" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-luxe-muted text-xs">Price (₾)</label>
+              <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="120" className="w-full bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-2 focus:outline-none focus:border-luxe-cream" />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setAdding(false)} className="px-4 py-2 text-xs border border-luxe-border text-luxe-muted hover:text-luxe-cream transition-colors">Cancel</button>
+            <button onClick={handleAdd} className="px-4 py-2 text-xs bg-luxe-cream text-luxe-bg hover:bg-luxe-accent transition-colors">Add</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="flex items-center gap-2 px-4 py-3 w-full border border-dashed border-luxe-border text-luxe-muted text-xs hover:border-luxe-cream hover:text-luxe-cream transition-colors">
+          <Plus size={14} /> Add Service
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 interface AdminDashboardProps {
-  departmentId?: string; // undefined = show all (super admin drill-in passes one)
-  showHeader?: boolean;  // false when embedded inside SuperAdminDashboard
+  departmentId?: string;
+  showHeader?: boolean;
 }
 
 export default function AdminDashboard({ departmentId, showHeader = true }: AdminDashboardProps) {
   const [tab, setTab] = useState<Tab>('today');
 
-  const professionals = departmentId
-    ? PROFESSIONALS.filter(p => p.departmentId === departmentId)
-    : PROFESSIONALS;
-
+  const [professionals, setProfessionals] = useState<typeof PROFESSIONALS>(
+    departmentId ? PROFESSIONALS.filter(p => p.departmentId === departmentId) : PROFESSIONALS
+  );
+  const [services, setServices] = useState<typeof SERVICES>([...SERVICES]);
   const [bookings, setBookings] = useState<Booking[]>(
-    departmentId
-      ? SEED_BOOKINGS.filter(b => b.departmentId === departmentId)
-      : SEED_BOOKINGS
+    departmentId ? SEED_BOOKINGS.filter(b => b.departmentId === departmentId) : SEED_BOOKINGS
   );
 
   const dept = departmentId ? DEPARTMENTS.find(d => d.id === departmentId) : null;
@@ -435,8 +574,21 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
         {tab === 'today' && <TodayView bookings={bookings} />}
         {tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} />}
         {tab === 'bookings' && <BookingsView bookings={bookings} professionals={professionals} onStatusChange={handleStatusChange} />}
-        {tab === 'staff' && <StaffView professionals={professionals} />}
-        {tab === 'services' && <ServicesView />}
+        {tab === 'staff' && (
+          <StaffView
+            professionals={professionals}
+            departmentId={departmentId}
+            onAdd={p => setProfessionals(prev => [...prev, p])}
+            onRemove={id => setProfessionals(prev => prev.filter(p => p.id !== id))}
+          />
+        )}
+        {tab === 'services' && (
+          <ServicesView
+            services={services}
+            onAdd={s => setServices(prev => [...prev, s])}
+            onRemove={id => setServices(prev => prev.filter(s => s.id !== id))}
+          />
+        )}
       </main>
     </div>
   );
