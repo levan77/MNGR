@@ -1,21 +1,71 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Check, Phone, MapPin, Clock, Star } from 'lucide-react';
 import {
-  DEPARTMENTS, SERVICES, PROFESSIONALS,
-  INITIAL_WORKING_HOURS,
-  type Department, type Service, type Professional, type Booking,
+  DEPARTMENTS, ALL_TIME_SLOTS,
+  type Department, type WorkingHours,
 } from '@/lib/data';
-import { getAvailableSlots } from '@/lib/availability';
-import { localDateString, getWeekDays, formatShortDate, formatLongDate } from '@/lib/dates';
+import { localDateString, getWeekDays, formatShortDate, formatLongDate, getDayOfWeek, timeToMinutes } from '@/lib/dates';
 import { isValidName, isValidPhone, formatPhone } from '@/lib/validation';
-import { createBooking } from '@/app/admin/actions';
+import {
+  publicGetServices, publicGetStaff, publicGetBookings, publicCreateBooking,
+} from '@/app/booking/actions';
+import type { DBService, DBStaff, DBBooking } from '@/app/admin/actions';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
+type ConfirmedBooking = {
+  reference: string;
+  service: DBService;
+  professional: DBStaff;
+  department: Department;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone: string;
+};
+
 function generateRef() {
   return 'ATL-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+}
+
+function getAvailableSlots(
+  staffHours: WorkingHours[] | null,
+  service: DBService,
+  bookings: DBBooking[],
+  professionalId: string,
+  date: string,
+  services: DBService[],
+): string[] {
+  if (!staffHours) return [];
+  const dow = getDayOfWeek(date);
+  const hours = staffHours[dow];
+  if (!hours) return [];
+
+  const workStart = timeToMinutes(hours.s);
+  const workEnd = timeToMinutes(hours.e);
+  const totalDuration = service.duration + service.buffer;
+
+  const occupied = bookings
+    .filter(b => b.professional_id === professionalId && b.date === date)
+    .map(b => {
+      const svc = services.find(s => s.id === b.service_id);
+      const start = timeToMinutes(b.time);
+      const end = start + (svc ? svc.duration + svc.buffer : 60);
+      return { start, end };
+    });
+
+  const today = localDateString();
+  const nowMins = date === today ? new Date().getHours() * 60 + new Date().getMinutes() : -1;
+
+  return ALL_TIME_SLOTS.filter(slot => {
+    const slotStart = timeToMinutes(slot);
+    const slotEnd = slotStart + totalDuration;
+    if (slotStart < workStart || slotEnd > workEnd) return false;
+    if (slotStart < nowMins) return false;
+    return !occupied.some(o => slotStart < o.end && slotEnd > o.start);
+  });
 }
 
 // ─── Step 1: Department ───────────────────────────────────────────────────────
@@ -46,33 +96,46 @@ function StepDepartment({ onSelect }: { onSelect: (d: Department) => void }) {
 }
 
 // ─── Step 2: Service ──────────────────────────────────────────────────────────
-function StepService({ onSelect, onBack }: { onSelect: (s: Service) => void; onBack: () => void }) {
+function StepService({
+  services, loading, onSelect, onBack,
+}: {
+  services: DBService[];
+  loading: boolean;
+  onSelect: (s: DBService) => void;
+  onBack: () => void;
+}) {
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
         <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 2 of 5</p>
         <h2 className="text-2xl font-display tracking-wider">Choose Service</h2>
       </div>
-      <div className="grid gap-3">
-        {SERVICES.map(svc => (
-          <button
-            key={svc.id}
-            onClick={() => onSelect(svc)}
-            className="flex items-start justify-between gap-4 p-5 border border-luxe-border hover:border-luxe-cream text-left transition-colors duration-150 group"
-          >
-            <div className="space-y-1">
-              <p className="text-luxe-cream font-medium tracking-wide">{svc.name}</p>
-              <p className="text-luxe-muted text-sm">{svc.tagline}</p>
-              <div className="flex items-center gap-3 pt-1">
-                <span className="flex items-center gap-1 text-luxe-muted text-xs">
-                  <Clock size={12} /> {svc.duration} min
-                </span>
+      {loading ? (
+        <p className="text-luxe-muted text-center py-8 text-sm">Loading services…</p>
+      ) : services.length === 0 ? (
+        <p className="text-luxe-muted text-center py-8 text-sm">No services available at this location yet.</p>
+      ) : (
+        <div className="grid gap-3">
+          {services.map(svc => (
+            <button
+              key={svc.id}
+              onClick={() => onSelect(svc)}
+              className="flex items-start justify-between gap-4 p-5 border border-luxe-border hover:border-luxe-cream text-left transition-colors duration-150 group"
+            >
+              <div className="space-y-1">
+                <p className="text-luxe-cream font-medium tracking-wide">{svc.name}</p>
+                {svc.tagline && <p className="text-luxe-muted text-sm">{svc.tagline}</p>}
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="flex items-center gap-1 text-luxe-muted text-xs">
+                    <Clock size={12} /> {svc.duration} min
+                  </span>
+                </div>
               </div>
-            </div>
-            <span className="text-luxe-accent text-lg font-light whitespace-nowrap">₾ {svc.price}</span>
-          </button>
-        ))}
-      </div>
+              <span className="text-luxe-accent text-lg font-light whitespace-nowrap">₾ {svc.price}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <button onClick={onBack} className="flex items-center gap-2 text-luxe-muted hover:text-luxe-cream text-sm transition-colors">
         <ArrowLeft size={14} /> Back
       </button>
@@ -82,28 +145,26 @@ function StepService({ onSelect, onBack }: { onSelect: (s: Service) => void; onB
 
 // ─── Step 3: Professional ─────────────────────────────────────────────────────
 function StepProfessional({
-  departmentId, serviceId, onSelect, onBack,
+  staff, loading, onSelect, onBack,
 }: {
-  departmentId: string;
-  serviceId: string;
-  onSelect: (p: Professional) => void;
+  staff: DBStaff[];
+  loading: boolean;
+  onSelect: (p: DBStaff) => void;
   onBack: () => void;
 }) {
-  const filtered = PROFESSIONALS.filter(
-    p => p.departmentId === departmentId && p.specialties.includes(serviceId)
-  );
-
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
         <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 3 of 5</p>
         <h2 className="text-2xl font-display tracking-wider">Choose Professional</h2>
       </div>
-      {filtered.length === 0 ? (
-        <p className="text-luxe-muted text-center py-8">No professionals available for this combination.</p>
+      {loading ? (
+        <p className="text-luxe-muted text-center py-8 text-sm">Loading…</p>
+      ) : staff.length === 0 ? (
+        <p className="text-luxe-muted text-center py-8 text-sm">No professionals available at this location.</p>
       ) : (
         <div className="grid gap-3">
-          {filtered.map(pro => (
+          {staff.map(pro => (
             <button
               key={pro.id}
               onClick={() => onSelect(pro)}
@@ -116,7 +177,7 @@ function StepProfessional({
                 <p className="text-luxe-cream font-medium tracking-wide">{pro.name}</p>
                 <p className="text-luxe-muted text-sm">{pro.title}</p>
                 <div className="flex items-center gap-1 mt-1">
-                  {[1,2,3,4,5].map(i => <Star key={i} size={10} className="fill-luxe-accent text-luxe-accent" />)}
+                  {[1, 2, 3, 4, 5].map(i => <Star key={i} size={10} className="fill-luxe-accent text-luxe-accent" />)}
                 </div>
               </div>
             </button>
@@ -132,34 +193,42 @@ function StepProfessional({
 
 // ─── Step 4: Schedule ─────────────────────────────────────────────────────────
 function StepSchedule({
-  professional, service, bookings, onSelect, onBack,
+  professional, service, services, departmentId, onSelect, onBack,
 }: {
-  professional: Professional;
-  service: Service;
-  bookings: Booking[];
+  professional: DBStaff;
+  service: DBService;
+  services: DBService[];
+  departmentId: string;
   onSelect: (date: string, time: string) => void;
   onBack: () => void;
 }) {
   const today = localDateString();
   const [weekStart, setWeekStart] = useState(today);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [bookings, setBookings] = useState<DBBooking[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(true);
   const days = getWeekDays(weekStart);
 
+  useEffect(() => {
+    setLoadingBookings(true);
+    publicGetBookings(departmentId, professional.id)
+      .then(setBookings)
+      .finally(() => setLoadingBookings(false));
+  }, [departmentId, professional.id]);
+
+  let staffHours: WorkingHours[] | null = null;
+  try { staffHours = JSON.parse(professional.working_hours) as WorkingHours[]; } catch {}
+
   const slots = selectedDate
-    ? getAvailableSlots(professional.id, selectedDate, service, INITIAL_WORKING_HOURS, bookings, SERVICES)
+    ? getAvailableSlots(staffHours, service, bookings, professional.id, selectedDate, services)
     : [];
 
-  function prevWeek() {
+  function shiftWeek(n: number) {
     const d = new Date(weekStart + 'T00:00:00');
-    d.setDate(d.getDate() - 7);
-    const newStart = localDateString(d);
-    if (newStart >= today) setWeekStart(newStart);
-  }
-
-  function nextWeek() {
-    const d = new Date(weekStart + 'T00:00:00');
-    d.setDate(d.getDate() + 7);
-    setWeekStart(localDateString(d));
+    d.setDate(d.getDate() + n * 7);
+    const next = localDateString(d);
+    if (n < 0 && next < today) return;
+    setWeekStart(next);
   }
 
   return (
@@ -169,9 +238,8 @@ function StepSchedule({
         <h2 className="text-2xl font-display tracking-wider">Choose Date & Time</h2>
       </div>
 
-      {/* Week navigation */}
       <div className="flex items-center justify-between">
-        <button onClick={prevWeek} className="p-2 text-luxe-muted hover:text-luxe-cream transition-colors">
+        <button onClick={() => shiftWeek(-1)} className="p-2 text-luxe-muted hover:text-luxe-cream transition-colors">
           <ArrowLeft size={16} />
         </button>
         <div className="grid grid-cols-7 gap-1 flex-1 mx-4">
@@ -186,28 +254,31 @@ function StepSchedule({
                 className={[
                   'flex flex-col items-center py-2 px-1 text-xs transition-colors border',
                   isPast ? 'opacity-30 cursor-not-allowed border-transparent' :
-                  isSelected ? 'border-luxe-cream text-luxe-cream' :
-                  'border-luxe-border text-luxe-muted hover:border-luxe-muted hover:text-luxe-cream',
+                    isSelected ? 'border-luxe-cream text-luxe-cream' :
+                      'border-luxe-border text-luxe-muted hover:border-luxe-muted hover:text-luxe-cream',
                 ].join(' ')}
               >
-                <span className="uppercase tracking-wider">{new Date(day + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }).slice(0,2)}</span>
+                <span className="uppercase tracking-wider">
+                  {new Date(day + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }).slice(0, 2)}
+                </span>
                 <span className="font-medium mt-0.5">{new Date(day + 'T00:00:00').getDate()}</span>
               </button>
             );
           })}
         </div>
-        <button onClick={nextWeek} className="p-2 text-luxe-muted hover:text-luxe-cream transition-colors">
+        <button onClick={() => shiftWeek(1)} className="p-2 text-luxe-muted hover:text-luxe-cream transition-colors">
           <ArrowRight size={16} />
         </button>
       </div>
 
-      {/* Time slots */}
       {selectedDate && (
         <div className="space-y-3">
           <p className="text-luxe-muted text-xs tracking-widest uppercase text-center">
             {formatShortDate(selectedDate)}
           </p>
-          {slots.length === 0 ? (
+          {loadingBookings ? (
+            <p className="text-luxe-muted text-center py-4 text-sm">Loading availability…</p>
+          ) : slots.length === 0 ? (
             <p className="text-luxe-muted text-center py-4 text-sm">No availability on this day.</p>
           ) : (
             <div className="grid grid-cols-4 gap-2">
@@ -234,11 +305,12 @@ function StepSchedule({
 
 // ─── Step 5: Details ──────────────────────────────────────────────────────────
 function StepDetails({
-  onConfirm, onBack, submitting,
+  onConfirm, onBack, submitting, error,
 }: {
   onConfirm: (name: string, phone: string) => void;
   onBack: () => void;
   submitting?: boolean;
+  error?: string | null;
 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -284,6 +356,7 @@ function StepDetails({
           />
           {errors.phone && <p className="text-red-400 text-xs">{errors.phone}</p>}
         </div>
+        {error && <p className="text-red-400 text-xs text-center">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
@@ -300,11 +373,7 @@ function StepDetails({
 }
 
 // ─── Step 6: Confirmation ─────────────────────────────────────────────────────
-function StepConfirmation({ booking }: { booking: Booking }) {
-  const svc = SERVICES.find(s => s.id === booking.serviceId)!;
-  const pro = PROFESSIONALS.find(p => p.id === booking.professionalId)!;
-  const dept = DEPARTMENTS.find(d => d.id === booking.departmentId)!;
-
+function StepConfirmation({ booking }: { booking: ConfirmedBooking }) {
   return (
     <div className="space-y-8 text-center">
       <div className="w-16 h-16 rounded-full border-2 border-luxe-cream flex items-center justify-center mx-auto">
@@ -319,14 +388,14 @@ function StepConfirmation({ booking }: { booking: Booking }) {
           <p className="text-luxe-muted text-xs tracking-widest uppercase">Reference</p>
           <p className="text-luxe-accent text-xl font-display tracking-wider mt-1">{booking.reference}</p>
         </div>
-        <Row label="Service" value={svc.name} />
-        <Row label="Professional" value={pro.name} />
-        <Row label="Location" value={dept.name} />
+        <Row label="Service" value={booking.service.name} />
+        <Row label="Professional" value={booking.professional.name} />
+        <Row label="Location" value={booking.department.name} />
         <Row label="Date" value={formatLongDate(booking.date)} />
         <Row label="Time" value={booking.time} />
         <Row label="Name" value={booking.clientName} />
         <Row label="Phone" value={booking.clientPhone} />
-        <Row label="Total" value={`₾ ${svc.price}`} />
+        <Row label="Total" value={`₾ ${booking.service.price}`} />
       </div>
       <a href="/booking" className="inline-block px-10 py-3 border border-luxe-border text-luxe-muted text-sm tracking-widest uppercase hover:border-luxe-cream hover:text-luxe-cream transition-colors">
         New Booking
@@ -348,92 +417,131 @@ function Row({ label, value }: { label: string; value: string }) {
 export default function ClientBooking() {
   const [step, setStep] = useState<Step>(1);
   const [department, setDepartment] = useState<Department | null>(null);
-  const [service, setService] = useState<Service | null>(null);
-  const [professional, setProfessional] = useState<Professional | null>(null);
+  const [service, setService] = useState<DBService | null>(null);
+  const [professional, setProfessional] = useState<DBStaff | null>(null);
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
-  const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [confirmedBooking, setConfirmedBooking] = useState<ConfirmedBooking | null>(null);
+  const [services, setServices] = useState<DBService[]>([]);
+  const [staff, setStaff] = useState<DBStaff[]>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
+  const [loadingStaff, setLoadingStaff] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!department) return;
+    setLoadingServices(true);
+    setLoadingStaff(true);
+    publicGetServices(department.id)
+      .then(setServices)
+      .catch(() => setServices([]))
+      .finally(() => setLoadingServices(false));
+    publicGetStaff(department.id)
+      .then(setStaff)
+      .catch(() => setStaff([]))
+      .finally(() => setLoadingStaff(false));
+  }, [department]);
 
   async function handleConfirm(name: string, phone: string) {
+    if (!department || !professional || !service || !date || !time) return;
     setSubmitting(true);
+    setSubmitError(null);
     const ref = generateRef();
     try {
-      await createBooking({
-        departmentId: department!.id,
-        professionalId: professional!.id,
-        serviceId: service!.id,
-        date: date!,
-        time: time!,
+      const result = await publicCreateBooking({
+        departmentId: department.id,
+        professionalId: professional.id,
+        serviceId: service.id,
+        date,
+        time,
         clientName: name,
         clientPhone: phone,
         reference: ref,
       });
-    } catch {
-      // persist failed — still show confirmation, booking shows server-side on next load
+      if (!result.ok) {
+        setSubmitError(result.error);
+        setSubmitting(false);
+        return;
+      }
+      setConfirmedBooking({
+        reference: ref,
+        service,
+        professional,
+        department,
+        date,
+        time,
+        clientName: name,
+        clientPhone: phone,
+      });
+      setStep(6);
+    } catch (e) {
+      setSubmitError('Could not save booking. Please try again. ' + String(e));
+    } finally {
+      setSubmitting(false);
     }
-    const booking: Booking = {
-      id: 'b-' + Date.now(),
-      professionalId: professional!.id,
-      serviceId: service!.id,
-      departmentId: department!.id,
-      date: date!,
-      time: time!,
-      clientName: name,
-      clientPhone: phone,
-      status: 'scheduled',
-      reference: ref,
-      createdAt: new Date().toISOString(),
-    };
-    setBookings(prev => [...prev, booking]);
-    setConfirmedBooking(booking);
-    setSubmitting(false);
-    setStep(6);
   }
+
+  // Eligible staff for this service in this department.
+  // Staff specialties are stored as JSON array of service IDs.
+  const eligibleStaff = service ? staff.filter(p => {
+    try {
+      const specs = JSON.parse(p.specialties) as string[];
+      return specs.length === 0 || specs.includes(service.id);
+    } catch { return true; }
+  }) : staff;
 
   return (
     <div className="min-h-screen bg-luxe-bg flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-6 py-5 border-b border-luxe-border">
         <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
         {step < 6 && (
           <div className="flex gap-1.5">
-            {([1,2,3,4,5] as const).map(s => (
+            {([1, 2, 3, 4, 5] as const).map(s => (
               <div key={s} className={`w-6 h-0.5 transition-colors ${s <= step ? 'bg-luxe-cream' : 'bg-luxe-border'}`} />
             ))}
           </div>
         )}
       </header>
 
-      {/* Content */}
       <main className="flex-1 flex items-start justify-center px-6 py-10">
         <div className="w-full max-w-md">
           {step === 1 && (
             <StepDepartment onSelect={d => { setDepartment(d); setStep(2); }} />
           )}
           {step === 2 && (
-            <StepService onSelect={s => { setService(s); setStep(3); }} onBack={() => setStep(1)} />
+            <StepService
+              services={services}
+              loading={loadingServices}
+              onSelect={s => { setService(s); setStep(3); }}
+              onBack={() => setStep(1)}
+            />
           )}
           {step === 3 && department && service && (
             <StepProfessional
-              departmentId={department.id}
-              serviceId={service.id}
+              staff={eligibleStaff}
+              loading={loadingStaff}
               onSelect={p => { setProfessional(p); setStep(4); }}
               onBack={() => setStep(2)}
             />
           )}
-          {step === 4 && professional && service && (
+          {step === 4 && professional && service && department && (
             <StepSchedule
               professional={professional}
               service={service}
-              bookings={bookings}
+              services={services}
+              departmentId={department.id}
               onSelect={(d, t) => { setDate(d); setTime(t); setStep(5); }}
               onBack={() => setStep(3)}
             />
           )}
           {step === 5 && (
-            <StepDetails onConfirm={handleConfirm} onBack={() => setStep(4)} submitting={submitting} />
+            <StepDetails
+              onConfirm={handleConfirm}
+              onBack={() => { setSubmitError(null); setStep(4); }}
+              submitting={submitting}
+              error={submitError}
+            />
           )}
           {step === 6 && confirmedBooking && (
             <StepConfirmation booking={confirmedBooking} />

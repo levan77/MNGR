@@ -1,10 +1,19 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
+
 export type SessionPayload =
   | { role: 'super_admin' }
   | { role: 'salon_admin'; salon_id: string };
 
 const COOKIE = 'admin_session';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+async function getSecret(name: 'MASTER_PASSWORD' | 'SALON_CREDENTIALS'): Promise<string | undefined> {
+  try {
+    const { env } = await getCloudflareContext<CloudflareEnv>();
+    const v = env[name];
+    if (typeof v === 'string') return v;
+  } catch {}
+  return process.env[name];
+}
 
 function toB64url(s: string): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -19,7 +28,7 @@ function bufToB64url(buf: ArrayBuffer): string {
 }
 
 async function signingKey(): Promise<CryptoKey> {
-  const secret = process.env.MASTER_PASSWORD ?? 'dev-fallback-change-me';
+  const secret = (await getSecret('MASTER_PASSWORD')) ?? 'dev-fallback-change-me';
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
@@ -28,8 +37,6 @@ async function signingKey(): Promise<CryptoKey> {
     ['sign', 'verify'],
   );
 }
-
-// ─── Token: <b64url(payload)>.<b64url(hmac)> ──────────────────────────────────
 
 export async function signSession(payload: SessionPayload): Promise<string> {
   const data = toB64url(JSON.stringify(payload));
@@ -54,8 +61,6 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
   }
 }
 
-// ─── Cookie helpers ───────────────────────────────────────────────────────────
-
 export function extractToken(cookieHeader: string | null): string | null {
   if (!cookieHeader) return null;
   const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
@@ -67,5 +72,6 @@ export async function validateRequest(cookieHeader: string | null): Promise<Sess
   return token ? verifySession(token) : null;
 }
 
+export { getSecret };
 export const COOKIE_NAME = COOKIE;
 export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
