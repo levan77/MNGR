@@ -27,14 +27,14 @@ const STATUS_COLORS: Record<BookingStatus, string> = {
 };
 
 // ─── Today Tab ────────────────────────────────────────────────────────────────
-function TodayView({ bookings }: { bookings: Booking[] }) {
+function TodayView({ bookings, services, professionals }: { bookings: Booking[]; services: DBService[]; professionals: DBStaff[] }) {
   const today = localDateString();
   const todayBks = bookings.filter(b => b.date === today).sort((a, b) => a.time.localeCompare(b.time));
   const scheduled = todayBks.filter(b => b.status === 'scheduled').length;
   const completed = todayBks.filter(b => b.status === 'completed').length;
   const revenue = todayBks
     .filter(b => b.status === 'completed')
-    .reduce((sum, b) => sum + (SERVICES.find(s => s.id === b.serviceId)?.price ?? 0), 0);
+    .reduce((sum, b) => sum + (services.find(s => s.id === b.serviceId)?.price ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -55,8 +55,8 @@ function TodayView({ bookings }: { bookings: Booking[] }) {
       ) : (
         <div className="space-y-2">
           {todayBks.map(b => {
-            const pro = PROFESSIONALS.find(p => p.id === b.professionalId);
-            const svc = SERVICES.find(s => s.id === b.serviceId);
+            const pro = professionals.find(p => p.id === b.professionalId);
+            const svc = services.find(s => s.id === b.serviceId);
             return (
               <div key={b.id} className="flex items-center gap-4 p-4 border border-luxe-border">
                 <span className="text-luxe-muted text-sm font-mono w-12 shrink-0">{b.time}</span>
@@ -78,10 +78,12 @@ function TodayView({ bookings }: { bookings: Booking[] }) {
 
 // ─── Calendar Tab ─────────────────────────────────────────────────────────────
 function CalendarView({
-  bookings, onStatusChange,
+  bookings, onStatusChange, services, professionals,
 }: {
   bookings: Booking[];
   onStatusChange: (id: string, status: BookingStatus) => void;
+  services: DBService[];
+  professionals: DBStaff[];
 }) {
   const today = localDateString();
   const [weekStart, setWeekStart] = useState(today);
@@ -134,8 +136,8 @@ function CalendarView({
             .filter(b => b.date === day)
             .sort((a, b) => a.time.localeCompare(b.time))
             .map(b => {
-              const pro = PROFESSIONALS.find(p => p.id === b.professionalId);
-              const svc = SERVICES.find(s => s.id === b.serviceId);
+              const pro = professionals.find(p => p.id === b.professionalId);
+              const svc = services.find(s => s.id === b.serviceId);
               return (
                 <div key={b.id} className="flex items-center gap-3 p-3 border border-luxe-border text-sm">
                   <span className="text-luxe-muted font-mono w-10 shrink-0">{b.time}</span>
@@ -165,10 +167,11 @@ function CalendarView({
 
 // ─── Bookings Tab ─────────────────────────────────────────────────────────────
 function BookingsView({
-  bookings, professionals, onStatusChange,
+  bookings, professionals, services, onStatusChange,
 }: {
   bookings: Booking[];
-  professionals: typeof PROFESSIONALS;
+  professionals: DBStaff[];
+  services: DBService[];
   onStatusChange: (id: string, status: BookingStatus) => void;
 }) {
   const [filterStatus, setFilterStatus] = useState<BookingStatus | 'all'>('all');
@@ -207,8 +210,8 @@ function BookingsView({
           <p className="text-luxe-muted text-sm text-center py-8">No bookings found.</p>
         )}
         {filtered.map(b => {
-          const pro = PROFESSIONALS.find(p => p.id === b.professionalId);
-          const svc = SERVICES.find(s => s.id === b.serviceId);
+          const pro = professionals.find(p => p.id === b.professionalId);
+          const svc = services.find(s => s.id === b.serviceId);
           const dept = DEPARTMENTS.find(d => d.id === b.departmentId);
           return (
             <div key={b.id} className="border border-luxe-border p-4 space-y-3">
@@ -593,9 +596,9 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
       </nav>
 
       <main className="flex-1 px-6 py-6 max-w-3xl w-full mx-auto">
-        {tab === 'today' && <TodayView bookings={bookings} />}
-        {tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} />}
-        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff.map(p => ({ id: p.id, name: p.name, title: p.title, departmentId, avatar: p.avatar, specialties: JSON.parse(p.specialties) }))} onStatusChange={handleStatusChange} />}
+        {tab === 'today' && <TodayView bookings={bookings} services={services} professionals={staff} />}
+        {tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} services={services} professionals={staff} />}
+        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} onStatusChange={handleStatusChange} />}
         {tab === 'staff' && (
           <StaffView
             staff={staff}
