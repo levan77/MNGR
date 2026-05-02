@@ -6,15 +6,16 @@ import {
   ChevronLeft, ChevronRight, Check, Clock, LogOut, Plus, Trash2, X,
 } from 'lucide-react';
 import {
-  DEPARTMENTS, SEED_BOOKINGS, ALL_TIME_SLOTS,
-  type Booking, type BookingStatus, type WorkingHours,
+  DEPARTMENTS, ALL_TIME_SLOTS,
+  type BookingStatus, type WorkingHours,
 } from '@/lib/data';
 import { localDateString, getWeekDays, formatShortDate } from '@/lib/dates';
 import { logoutAction } from '@/app/admin/login/actions';
 import {
   getServices, addService, deleteService,
   getStaff, addStaffMember, deleteStaffMember,
-  type DBService, type DBStaff,
+  getBookings, updateBookingStatus, deleteBooking,
+  type DBService, type DBStaff, type DBBooking,
 } from '@/app/admin/actions';
 
 type Tab = 'today' | 'calendar' | 'bookings' | 'staff' | 'services';
@@ -27,14 +28,14 @@ const STATUS_COLORS: Record<BookingStatus, string> = {
 };
 
 // ─── Today Tab ────────────────────────────────────────────────────────────────
-function TodayView({ bookings, services, professionals }: { bookings: Booking[]; services: DBService[]; professionals: DBStaff[] }) {
+function TodayView({ bookings, services, professionals }: { bookings: DBBooking[]; services: DBService[]; professionals: DBStaff[] }) {
   const today = localDateString();
   const todayBks = bookings.filter(b => b.date === today).sort((a, b) => a.time.localeCompare(b.time));
   const scheduled = todayBks.filter(b => b.status === 'scheduled').length;
   const completed = todayBks.filter(b => b.status === 'completed').length;
   const revenue = todayBks
     .filter(b => b.status === 'completed')
-    .reduce((sum, b) => sum + (services.find(s => s.id === b.serviceId)?.price ?? 0), 0);
+    .reduce((sum, b) => sum + (services.find(s => s.id === b.service_id)?.price ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -55,16 +56,16 @@ function TodayView({ bookings, services, professionals }: { bookings: Booking[];
       ) : (
         <div className="space-y-2">
           {todayBks.map(b => {
-            const pro = professionals.find(p => p.id === b.professionalId);
-            const svc = services.find(s => s.id === b.serviceId);
+            const pro = professionals.find(p => p.id === b.professional_id);
+            const svc = services.find(s => s.id === b.service_id);
             return (
               <div key={b.id} className="flex items-center gap-4 p-4 border border-luxe-border">
                 <span className="text-luxe-muted text-sm font-mono w-12 shrink-0">{b.time}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-luxe-cream text-sm truncate">{b.clientName}</p>
+                  <p className="text-luxe-cream text-sm truncate">{b.client_name}</p>
                   <p className="text-luxe-muted text-xs truncate">{svc?.name} · {pro?.name}</p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[b.status]}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[b.status as BookingStatus] ?? ''}`}>
                   {b.status}
                 </span>
               </div>
@@ -80,7 +81,7 @@ function TodayView({ bookings, services, professionals }: { bookings: Booking[];
 function CalendarView({
   bookings, onStatusChange, services, professionals,
 }: {
-  bookings: Booking[];
+  bookings: DBBooking[];
   onStatusChange: (id: string, status: BookingStatus) => void;
   services: DBService[];
   professionals: DBStaff[];
@@ -136,14 +137,14 @@ function CalendarView({
             .filter(b => b.date === day)
             .sort((a, b) => a.time.localeCompare(b.time))
             .map(b => {
-              const pro = professionals.find(p => p.id === b.professionalId);
-              const svc = services.find(s => s.id === b.serviceId);
+              const pro = professionals.find(p => p.id === b.professional_id);
+              const svc = services.find(s => s.id === b.service_id);
               return (
                 <div key={b.id} className="flex items-center gap-3 p-3 border border-luxe-border text-sm">
                   <span className="text-luxe-muted font-mono w-10 shrink-0">{b.time}</span>
                   <span className="text-luxe-muted w-20 shrink-0 hidden sm:block">{formatShortDate(b.date)}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-luxe-cream truncate">{b.clientName}</p>
+                    <p className="text-luxe-cream truncate">{b.client_name}</p>
                     <p className="text-luxe-muted text-xs truncate">{svc?.name} · {pro?.name}</p>
                   </div>
                   <select
@@ -167,19 +168,20 @@ function CalendarView({
 
 // ─── Bookings Tab ─────────────────────────────────────────────────────────────
 function BookingsView({
-  bookings, professionals, services, onStatusChange,
+  bookings, professionals, services, onStatusChange, onDelete,
 }: {
-  bookings: Booking[];
+  bookings: DBBooking[];
   professionals: DBStaff[];
   services: DBService[];
   onStatusChange: (id: string, status: BookingStatus) => void;
+  onDelete: (id: string) => void;
 }) {
   const [filterStatus, setFilterStatus] = useState<BookingStatus | 'all'>('all');
   const [filterPro, setFilterPro] = useState('all');
 
   const filtered = bookings.filter(b =>
     (filterStatus === 'all' || b.status === filterStatus) &&
-    (filterPro === 'all' || b.professionalId === filterPro)
+    (filterPro === 'all' || b.professional_id === filterPro)
   ).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
 
   return (
@@ -210,17 +212,17 @@ function BookingsView({
           <p className="text-luxe-muted text-sm text-center py-8">No bookings found.</p>
         )}
         {filtered.map(b => {
-          const pro = professionals.find(p => p.id === b.professionalId);
-          const svc = services.find(s => s.id === b.serviceId);
-          const dept = DEPARTMENTS.find(d => d.id === b.departmentId);
+          const pro = professionals.find(p => p.id === b.professional_id);
+          const svc = services.find(s => s.id === b.service_id);
+          const dept = DEPARTMENTS.find(d => d.id === b.department_id);
           return (
             <div key={b.id} className="border border-luxe-border p-4 space-y-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-luxe-cream font-medium truncate">{b.clientName}</p>
-                  <p className="text-luxe-muted text-xs">{b.clientPhone}</p>
+                  <p className="text-luxe-cream font-medium truncate">{b.client_name}</p>
+                  <p className="text-luxe-muted text-xs">{b.client_phone}</p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[b.status]}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[b.status as BookingStatus] ?? ''}`}>
                   {b.status}
                 </span>
               </div>
@@ -232,16 +234,21 @@ function BookingsView({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-luxe-accent text-xs">{b.reference}</span>
-                <select
-                  value={b.status}
-                  onChange={e => onStatusChange(b.id, e.target.value as BookingStatus)}
-                  className="bg-luxe-bg border border-luxe-border text-luxe-muted text-xs px-2 py-1 focus:outline-none"
-                >
-                  <option value="scheduled">scheduled</option>
-                  <option value="completed">completed</option>
-                  <option value="no_show">no_show</option>
-                  <option value="cancelled">cancelled</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={b.status}
+                    onChange={e => onStatusChange(b.id, e.target.value as BookingStatus)}
+                    className="bg-luxe-bg border border-luxe-border text-luxe-muted text-xs px-2 py-1 focus:outline-none"
+                  >
+                    <option value="scheduled">scheduled</option>
+                    <option value="completed">completed</option>
+                    <option value="no_show">no_show</option>
+                    <option value="cancelled">cancelled</option>
+                  </select>
+                  <button onClick={() => onDelete(b.id)} className="text-luxe-border hover:text-red-400 transition-colors" title="Delete booking">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -542,19 +549,25 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
   const [tab, setTab] = useState<Tab>('today');
   const [staff, setStaff] = useState<DBStaff[]>([]);
   const [services, setServices] = useState<DBService[]>([]);
-  const [bookings, setBookings] = useState<Booking[]>(
-    SEED_BOOKINGS.filter(b => b.departmentId === departmentId)
-  );
+  const [bookings, setBookings] = useState<DBBooking[]>([]);
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     getStaff(departmentId).then(setStaff);
     getServices(departmentId).then(setServices);
+    getBookings(departmentId).then(setBookings);
   }, [departmentId]);
 
   const dept = DEPARTMENTS.find(d => d.id === departmentId) ?? null;
 
   function handleStatusChange(id: string, status: BookingStatus) {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
+    startTransition(async () => { await updateBookingStatus(id, status); });
+  }
+
+  function handleDeleteBooking(id: string) {
+    setBookings(prev => prev.filter(b => b.id !== id));
+    startTransition(async () => { await deleteBooking(id); });
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -598,7 +611,7 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
       <main className="flex-1 px-6 py-6 max-w-3xl w-full mx-auto">
         {tab === 'today' && <TodayView bookings={bookings} services={services} professionals={staff} />}
         {tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} services={services} professionals={staff} />}
-        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} onStatusChange={handleStatusChange} />}
+        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} onStatusChange={handleStatusChange} onDelete={handleDeleteBooking} />}
         {tab === 'staff' && (
           <StaffView
             staff={staff}

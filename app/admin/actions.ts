@@ -2,6 +2,20 @@
 
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 
+export type DBBooking = {
+  id: string;
+  department_id: string;
+  professional_id: string;
+  service_id: string;
+  date: string;
+  time: string;
+  client_name: string;
+  client_phone: string;
+  status: string;
+  reference: string;
+  created_at: string;
+};
+
 export type DBService = {
   id: string;
   department_id: string;
@@ -103,5 +117,57 @@ export async function deleteStaffMember(id: string, departmentId: string): Promi
   await db
     .prepare('DELETE FROM staff WHERE id = ? AND department_id = ?')
     .bind(id, departmentId)
+    .run();
+}
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+export async function getBookings(departmentId: string): Promise<DBBooking[]> {
+  const db = await getDB();
+  const { results } = await db
+    .prepare('SELECT * FROM bookings WHERE department_id = ? ORDER BY date DESC, time DESC')
+    .bind(departmentId)
+    .all<DBBooking>();
+  return results;
+}
+
+export async function createBooking(data: {
+  departmentId: string;
+  professionalId: string;
+  serviceId: string;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone: string;
+  reference: string;
+}): Promise<DBBooking> {
+  const id = `b-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const db = await getDB();
+  await db
+    .prepare('INSERT INTO bookings (id, department_id, professional_id, service_id, date, time, client_name, client_phone, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, data.departmentId, data.professionalId, data.serviceId, data.date, data.time, data.clientName, data.clientPhone, data.reference)
+    .run();
+  return {
+    id, department_id: data.departmentId, professional_id: data.professionalId,
+    service_id: data.serviceId, date: data.date, time: data.time,
+    client_name: data.clientName, client_phone: data.clientPhone,
+    status: 'scheduled', reference: data.reference,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export async function updateBookingStatus(id: string, status: string): Promise<void> {
+  const db = await getDB();
+  await db
+    .prepare('UPDATE bookings SET status = ? WHERE id = ?')
+    .bind(status, id)
+    .run();
+}
+
+export async function deleteBooking(id: string): Promise<void> {
+  const db = await getDB();
+  await db
+    .prepare('DELETE FROM bookings WHERE id = ?')
+    .bind(id)
     .run();
 }

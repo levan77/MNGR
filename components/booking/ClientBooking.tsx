@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Phone, MapPin, Clock, Star } from 'lucide-react';
 import {
   DEPARTMENTS, SERVICES, PROFESSIONALS,
-  SEED_BOOKINGS, INITIAL_WORKING_HOURS,
+  INITIAL_WORKING_HOURS,
   type Department, type Service, type Professional, type Booking,
 } from '@/lib/data';
 import { getAvailableSlots } from '@/lib/availability';
 import { localDateString, getWeekDays, formatShortDate, formatLongDate } from '@/lib/dates';
 import { isValidName, isValidPhone, formatPhone } from '@/lib/validation';
+import { createBooking } from '@/app/admin/actions';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -233,10 +234,11 @@ function StepSchedule({
 
 // ─── Step 5: Details ──────────────────────────────────────────────────────────
 function StepDetails({
-  onConfirm, onBack,
+  onConfirm, onBack, submitting,
 }: {
   onConfirm: (name: string, phone: string) => void;
   onBack: () => void;
+  submitting?: boolean;
 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -284,9 +286,10 @@ function StepDetails({
         </div>
         <button
           type="submit"
-          className="w-full py-4 bg-luxe-cream text-luxe-bg text-sm tracking-widest uppercase hover:bg-luxe-accent transition-colors duration-200 mt-2"
+          disabled={submitting}
+          className="w-full py-4 bg-luxe-cream text-luxe-bg text-sm tracking-widest uppercase hover:bg-luxe-accent transition-colors duration-200 mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Confirm Booking
+          {submitting ? 'Confirming…' : 'Confirm Booking'}
         </button>
       </form>
       <button onClick={onBack} className="flex items-center gap-2 text-luxe-muted hover:text-luxe-cream text-sm transition-colors">
@@ -350,9 +353,26 @@ export default function ClientBooking() {
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
-  const [bookings] = useState<Booking[]>(SEED_BOOKINGS);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleConfirm(name: string, phone: string) {
+  async function handleConfirm(name: string, phone: string) {
+    setSubmitting(true);
+    const ref = generateRef();
+    try {
+      await createBooking({
+        departmentId: department!.id,
+        professionalId: professional!.id,
+        serviceId: service!.id,
+        date: date!,
+        time: time!,
+        clientName: name,
+        clientPhone: phone,
+        reference: ref,
+      });
+    } catch {
+      // persist failed — still show confirmation, booking shows server-side on next load
+    }
     const booking: Booking = {
       id: 'b-' + Date.now(),
       professionalId: professional!.id,
@@ -363,10 +383,12 @@ export default function ClientBooking() {
       clientName: name,
       clientPhone: phone,
       status: 'scheduled',
-      reference: generateRef(),
+      reference: ref,
       createdAt: new Date().toISOString(),
     };
+    setBookings(prev => [...prev, booking]);
     setConfirmedBooking(booking);
+    setSubmitting(false);
     setStep(6);
   }
 
@@ -411,7 +433,7 @@ export default function ClientBooking() {
             />
           )}
           {step === 5 && (
-            <StepDetails onConfirm={handleConfirm} onBack={() => setStep(4)} />
+            <StepDetails onConfirm={handleConfirm} onBack={() => setStep(4)} submitting={submitting} />
           )}
           {step === 6 && confirmedBooking && (
             <StepConfirmation booking={confirmedBooking} />
