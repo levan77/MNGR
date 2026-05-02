@@ -37,8 +37,11 @@ export type DBStaff = {
 };
 
 async function getDB(): Promise<D1Database> {
-  const { env } = await getCloudflareContext<CloudflareEnv>();
-  return env.DB;
+  const ctx = await getCloudflareContext<CloudflareEnv>();
+  if (!ctx?.env?.DB) {
+    throw new Error(`D1 binding unavailable. env keys: ${Object.keys(ctx?.env ?? {}).join(', ')}`);
+  }
+  return ctx.env.DB;
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────

@@ -303,17 +303,21 @@ function StaffView({
     if (!form.name.trim()) return;
     const initials = form.name.trim().split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
     startTransition(async () => {
-      const newMember = await addStaffMember({
-        departmentId,
-        name: form.name.trim(),
-        title: form.title.trim() || 'Stylist',
-        avatar: initials,
-      });
-      setHours(prev => ({ ...prev, [newMember.id]: [...DEFAULT_HOURS] }));
-      onAdd(newMember);
-      setSelectedPro(newMember.id);
-      setForm({ name: '', title: '' });
-      setAdding(false);
+      try {
+        const newMember = await addStaffMember({
+          departmentId,
+          name: form.name.trim(),
+          title: form.title.trim() || 'Stylist',
+          avatar: initials,
+        });
+        setHours(prev => ({ ...prev, [newMember.id]: [...DEFAULT_HOURS] }));
+        onAdd(newMember);
+        setSelectedPro(newMember.id);
+        setForm({ name: '', title: '' });
+        setAdding(false);
+      } catch (e) {
+        alert('Failed to save staff member: ' + String(e));
+      }
     });
   }
 
@@ -457,23 +461,31 @@ function ServicesView({
   function handleAdd() {
     if (!form.name.trim() || !form.price) return;
     startTransition(async () => {
-      const newSvc = await addService({
-        departmentId,
-        name: form.name.trim(),
-        tagline: form.tagline.trim(),
-        duration: parseInt(form.duration) || 60,
-        price: parseInt(form.price) || 0,
-      });
-      onAdd(newSvc);
-      setForm({ name: '', tagline: '', duration: '60', price: '' });
-      setAdding(false);
+      try {
+        const newSvc = await addService({
+          departmentId,
+          name: form.name.trim(),
+          tagline: form.tagline.trim(),
+          duration: parseInt(form.duration) || 60,
+          price: parseInt(form.price) || 0,
+        });
+        onAdd(newSvc);
+        setForm({ name: '', tagline: '', duration: '60', price: '' });
+        setAdding(false);
+      } catch (e) {
+        alert('Failed to save service: ' + String(e));
+      }
     });
   }
 
   function handleRemove(id: string) {
     startTransition(async () => {
-      await deleteService(id, departmentId);
-      onRemove(id);
+      try {
+        await deleteService(id, departmentId);
+        onRemove(id);
+      } catch (e) {
+        alert('Failed to delete service: ' + String(e));
+      }
     });
   }
 
