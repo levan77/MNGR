@@ -1,17 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import {
   LayoutGrid, Calendar, List, Users, Scissors,
   ChevronLeft, ChevronRight, Check, Clock, LogOut, Plus, Trash2, X,
 } from 'lucide-react';
 import {
-  PROFESSIONALS, SERVICES, DEPARTMENTS, SEED_BOOKINGS,
-  INITIAL_WORKING_HOURS, ALL_TIME_SLOTS,
+  DEPARTMENTS, SEED_BOOKINGS, ALL_TIME_SLOTS,
   type Booking, type BookingStatus, type WorkingHours,
 } from '@/lib/data';
 import { localDateString, getWeekDays, formatShortDate } from '@/lib/dates';
 import { logoutAction } from '@/app/admin/login/actions';
+import {
+  getServices, addService, deleteService,
+  getStaff, addStaffMember, deleteStaffMember,
+  type DBService, type DBStaff,
+} from '@/app/admin/actions';
 
 type Tab = 'today' | 'calendar' | 'bookings' | 'staff' | 'services';
 
@@ -248,22 +252,23 @@ function BookingsView({
 const DEFAULT_HOURS: WorkingHours[] = [null, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '19:00' }, { s: '09:00', e: '18:00' }];
 
 function StaffView({
-  professionals,
+  staff,
   departmentId,
   onAdd,
   onRemove,
 }: {
-  professionals: typeof PROFESSIONALS;
-  departmentId?: string;
-  onAdd: (p: typeof PROFESSIONALS[0]) => void;
+  staff: DBStaff[];
+  departmentId: string;
+  onAdd: (p: DBStaff) => void;
   onRemove: (id: string) => void;
 }) {
   const [hours, setHours] = useState<Record<string, WorkingHours[]>>(
-    Object.fromEntries(professionals.map(p => [p.id, [...DEFAULT_HOURS]]))
+    Object.fromEntries(staff.map(p => [p.id, JSON.parse(p.working_hours) as WorkingHours[]]))
   );
-  const [selectedPro, setSelectedPro] = useState(professionals[0]?.id ?? '');
+  const [selectedPro, setSelectedPro] = useState(staff[0]?.id ?? '');
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', title: '' });
+  const [pending, startTransition] = useTransition();
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   function toggle(proId: string, dayIdx: number) {
@@ -286,36 +291,38 @@ function StaffView({
 
   function handleAdd() {
     if (!form.name.trim()) return;
-    const id = `p-${Date.now()}`;
-    const initials = form.name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-    const newPro: typeof PROFESSIONALS[0] = {
-      id,
-      name: form.name.trim(),
-      title: form.title.trim() || 'Stylist',
-      departmentId: departmentId ?? 'd1',
-      avatar: initials,
-      specialties: [],
-    };
-    setHours(prev => ({ ...prev, [id]: [...DEFAULT_HOURS] }));
-    onAdd(newPro);
-    setSelectedPro(id);
-    setForm({ name: '', title: '' });
-    setAdding(false);
+    const initials = form.name.trim().split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+    startTransition(async () => {
+      const newMember = await addStaffMember({
+        departmentId,
+        name: form.name.trim(),
+        title: form.title.trim() || 'Stylist',
+        avatar: initials,
+      });
+      setHours(prev => ({ ...prev, [newMember.id]: [...DEFAULT_HOURS] }));
+      onAdd(newMember);
+      setSelectedPro(newMember.id);
+      setForm({ name: '', title: '' });
+      setAdding(false);
+    });
   }
 
   function handleRemove(id: string) {
-    onRemove(id);
-    if (selectedPro === id) setSelectedPro(professionals.find(p => p.id !== id)?.id ?? '');
+    startTransition(async () => {
+      await deleteStaffMember(id, departmentId);
+      onRemove(id);
+      if (selectedPro === id) setSelectedPro(staff.find(p => p.id !== id)?.id ?? '');
+    });
   }
 
-  const pro = professionals.find(p => p.id === selectedPro);
+  const pro = staff.find(p => p.id === selectedPro);
   const proHours = hours[selectedPro] ?? DEFAULT_HOURS;
 
   return (
     <div className="space-y-5">
       {/* Staff chips + add button */}
       <div className="flex gap-2 flex-wrap items-center">
-        {professionals.map(p => (
+        {staff.map(p => (
           <div key={p.id} className={`flex items-center gap-1 border transition-colors ${p.id === selectedPro ? 'border-luxe-cream' : 'border-luxe-border'}`}>
             <button
               onClick={() => setSelectedPro(p.id)}
@@ -325,7 +332,8 @@ function StaffView({
             </button>
             <button
               onClick={() => handleRemove(p.id)}
-              className="pr-2 text-luxe-border hover:text-red-400 transition-colors"
+              disabled={pending}
+              className="pr-2 text-luxe-border hover:text-red-400 transition-colors disabled:opacity-40"
               title="Remove"
             >
               <X size={12} />
@@ -413,7 +421,7 @@ function StaffView({
         </div>
       )}
 
-      {professionals.length === 0 && !adding && (
+      {staff.length === 0 && !adding && (
         <p className="text-luxe-muted text-sm text-center py-8">No staff at this location.</p>
       )}
     </div>
@@ -423,28 +431,40 @@ function StaffView({
 // ─── Services Tab ─────────────────────────────────────────────────────────────
 function ServicesView({
   services,
+  departmentId,
   onAdd,
   onRemove,
 }: {
-  services: typeof SERVICES;
-  onAdd: (s: typeof SERVICES[0]) => void;
+  services: DBService[];
+  departmentId: string;
+  onAdd: (s: DBService) => void;
   onRemove: (id: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', tagline: '', duration: '60', price: '' });
+  const [pending, startTransition] = useTransition();
 
   function handleAdd() {
     if (!form.name.trim() || !form.price) return;
-    onAdd({
-      id: `s-${Date.now()}`,
-      name: form.name.trim(),
-      tagline: form.tagline.trim(),
-      duration: parseInt(form.duration) || 60,
-      buffer: 10,
-      price: parseInt(form.price) || 0,
+    startTransition(async () => {
+      const newSvc = await addService({
+        departmentId,
+        name: form.name.trim(),
+        tagline: form.tagline.trim(),
+        duration: parseInt(form.duration) || 60,
+        price: parseInt(form.price) || 0,
+      });
+      onAdd(newSvc);
+      setForm({ name: '', tagline: '', duration: '60', price: '' });
+      setAdding(false);
     });
-    setForm({ name: '', tagline: '', duration: '60', price: '' });
-    setAdding(false);
+  }
+
+  function handleRemove(id: string) {
+    startTransition(async () => {
+      await deleteService(id, departmentId);
+      onRemove(id);
+    });
   }
 
   return (
@@ -464,7 +484,7 @@ function ServicesView({
                     <Clock size={10} /> {svc.duration}m
                   </p>
                 </div>
-                <button onClick={() => onRemove(svc.id)} className="text-luxe-border hover:text-red-400 transition-colors mt-0.5" title="Remove">
+                <button onClick={() => handleRemove(svc.id)} disabled={pending} className="text-luxe-border hover:text-red-400 transition-colors mt-0.5 disabled:opacity-40" title="Remove">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -511,22 +531,24 @@ function ServicesView({
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 interface AdminDashboardProps {
-  departmentId?: string;
+  departmentId: string;
   showHeader?: boolean;
 }
 
 export default function AdminDashboard({ departmentId, showHeader = true }: AdminDashboardProps) {
   const [tab, setTab] = useState<Tab>('today');
-
-  const [professionals, setProfessionals] = useState<typeof PROFESSIONALS>(
-    departmentId ? PROFESSIONALS.filter(p => p.departmentId === departmentId) : PROFESSIONALS
-  );
-  const [services, setServices] = useState<typeof SERVICES>([...SERVICES]);
+  const [staff, setStaff] = useState<DBStaff[]>([]);
+  const [services, setServices] = useState<DBService[]>([]);
   const [bookings, setBookings] = useState<Booking[]>(
-    departmentId ? SEED_BOOKINGS.filter(b => b.departmentId === departmentId) : SEED_BOOKINGS
+    SEED_BOOKINGS.filter(b => b.departmentId === departmentId)
   );
 
-  const dept = departmentId ? DEPARTMENTS.find(d => d.id === departmentId) : null;
+  useEffect(() => {
+    getStaff(departmentId).then(setStaff);
+    getServices(departmentId).then(setServices);
+  }, [departmentId]);
+
+  const dept = DEPARTMENTS.find(d => d.id === departmentId) ?? null;
 
   function handleStatusChange(id: string, status: BookingStatus) {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
@@ -573,18 +595,19 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
       <main className="flex-1 px-6 py-6 max-w-3xl w-full mx-auto">
         {tab === 'today' && <TodayView bookings={bookings} />}
         {tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} />}
-        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={professionals} onStatusChange={handleStatusChange} />}
+        {tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff.map(p => ({ id: p.id, name: p.name, title: p.title, departmentId, avatar: p.avatar, specialties: JSON.parse(p.specialties) }))} onStatusChange={handleStatusChange} />}
         {tab === 'staff' && (
           <StaffView
-            professionals={professionals}
+            staff={staff}
             departmentId={departmentId}
-            onAdd={p => setProfessionals(prev => [...prev, p])}
-            onRemove={id => setProfessionals(prev => prev.filter(p => p.id !== id))}
+            onAdd={p => setStaff(prev => [...prev, p])}
+            onRemove={id => setStaff(prev => prev.filter(p => p.id !== id))}
           />
         )}
         {tab === 'services' && (
           <ServicesView
             services={services}
+            departmentId={departmentId}
             onAdd={s => setServices(prev => [...prev, s])}
             onRemove={id => setServices(prev => prev.filter(s => s.id !== id))}
           />

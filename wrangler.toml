@@ -7,6 +7,11 @@ main = ".open-next/worker.js"
 directory = ".open-next/assets"
 binding = "ASSETS"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "mngr-db"
+database_id = "0606b4f3-bb69-41b6-9910-cb5dcc18500e"
+
 [vars]
 # Secrets — set via: npx wrangler secret put SECRET_NAME --name mngr
 #
