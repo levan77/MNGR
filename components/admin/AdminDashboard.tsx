@@ -3,19 +3,17 @@
 import { useState, useEffect, useTransition } from 'react';
 import {
   LayoutGrid, Calendar, List, Users, Scissors,
-  ChevronLeft, ChevronRight, Clock, LogOut, Plus, Trash2, X, Save,
+  ChevronLeft, ChevronRight, Clock, LogOut, Plus, Trash2, X, Save, Check,
 } from 'lucide-react';
-import {
-  DEPARTMENTS, ALL_TIME_SLOTS,
-  type BookingStatus, type WorkingHours,
-} from '@/lib/data';
+import { ALL_TIME_SLOTS, type BookingStatus, type WorkingHours } from '@/lib/data';
 import { localDateString, getWeekDays, formatShortDate } from '@/lib/dates';
 import { logoutAction } from '@/app/admin/login/actions';
 import {
   getServices, addService, deleteService,
-  getStaff, addStaffMember, deleteStaffMember, updateStaffHours,
+  getStaff, addStaffMember, deleteStaffMember, updateStaffHours, updateStaffSpecialties,
   getBookings, updateBookingStatus, deleteBooking,
-  type DBService, type DBStaff, type DBBooking,
+  getSalonById,
+  type DBService, type DBStaff, type DBBooking, type DBSalon,
 } from '@/app/admin/actions';
 
 type Tab = 'today' | 'calendar' | 'bookings' | 'staff' | 'services';
@@ -192,11 +190,12 @@ function CalendarView({
 
 // ─── Bookings Tab ─────────────────────────────────────────────────────────────
 function BookingsView({
-  bookings, professionals, services, onStatusChange, onDelete,
+  bookings, professionals, services, salonName, onStatusChange, onDelete,
 }: {
   bookings: DBBooking[];
   professionals: DBStaff[];
   services: DBService[];
+  salonName: string;
   onStatusChange: (id: string, status: BookingStatus) => void;
   onDelete: (id: string) => void;
 }) {
@@ -238,7 +237,6 @@ function BookingsView({
         {filtered.map(b => {
           const pro = professionals.find(p => p.id === b.professional_id);
           const svc = services.find(s => s.id === b.service_id);
-          const dept = DEPARTMENTS.find(d => d.id === b.department_id);
           return (
             <div key={b.id} className="border border-luxe-border p-4 space-y-3">
               <div className="flex items-start justify-between gap-4">
@@ -254,7 +252,7 @@ function BookingsView({
                 <span className="text-luxe-muted">{b.date} · {b.time}</span>
                 <span className="text-luxe-muted truncate">{svc?.name ?? '—'}</span>
                 <span className="text-luxe-muted truncate">{pro?.name ?? '—'}</span>
-                <span className="text-luxe-muted truncate">{dept?.city ?? '—'}</span>
+                <span className="text-luxe-muted truncate">{salonName}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-luxe-accent text-xs">{b.reference}</span>
@@ -288,23 +286,26 @@ function BookingsView({
 
 // ─── Staff Tab ────────────────────────────────────────────────────────────────
 function StaffView({
-  staff, departmentId, onAdd, onRemove, onHoursSaved,
+  staff, services, departmentId, onAdd, onRemove, onHoursSaved, onSpecialtiesSaved,
 }: {
   staff: DBStaff[];
+  services: DBService[];
   departmentId: string;
   onAdd: (p: DBStaff) => void;
   onRemove: (id: string) => void;
   onHoursSaved: (id: string, raw: string) => void;
+  onSpecialtiesSaved: (id: string, raw: string) => void;
 }) {
   const [hoursMap, setHoursMap] = useState<Record<string, WorkingHours[]>>({});
   const [savedRaw, setSavedRaw] = useState<Record<string, string>>({});
+  const [specialtiesMap, setSpecialtiesMap] = useState<Record<string, string[]>>({});
+  const [savedSpecRaw, setSavedSpecRaw] = useState<Record<string, string>>({});
   const [selectedPro, setSelectedPro] = useState('');
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', title: '' });
   const [pending, startTransition] = useTransition();
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Sync hoursMap with the staff prop when it changes (after fetch or mutations)
   useEffect(() => {
     setHoursMap(prev => {
       const next: Record<string, WorkingHours[]> = {};
@@ -314,6 +315,16 @@ function StaffView({
         sav[p.id] = p.working_hours;
       }
       setSavedRaw(sav);
+      return next;
+    });
+    setSpecialtiesMap(prev => {
+      const next: Record<string, string[]> = {};
+      const sav: Record<string, string> = {};
+      for (const p of staff) {
+        try { next[p.id] = prev[p.id] ?? JSON.parse(p.specialties); } catch { next[p.id] = []; }
+        sav[p.id] = p.specialties;
+      }
+      setSavedSpecRaw(sav);
       return next;
     });
     if (!selectedPro && staff[0]) setSelectedPro(staff[0].id);
@@ -387,9 +398,33 @@ function StaffView({
     });
   }
 
+  function toggleSpecialty(proId: string, serviceId: string) {
+    setSpecialtiesMap(prev => {
+      const cur = prev[proId] ?? [];
+      const next = cur.includes(serviceId) ? cur.filter(id => id !== serviceId) : [...cur, serviceId];
+      return { ...prev, [proId]: next };
+    });
+  }
+
+  function handleSaveSpecialties(id: string) {
+    const specs = specialtiesMap[id] ?? [];
+    startTransition(async () => {
+      try {
+        await updateStaffSpecialties(id, departmentId, specs);
+        const raw = JSON.stringify(specs);
+        setSavedSpecRaw(prev => ({ ...prev, [id]: raw }));
+        onSpecialtiesSaved(id, raw);
+      } catch (e) {
+        alert('Failed to save services: ' + String(e));
+      }
+    });
+  }
+
   const pro = staff.find(p => p.id === selectedPro);
   const proHours = hoursMap[selectedPro] ?? DEFAULT_HOURS;
+  const proSpecs = specialtiesMap[selectedPro] ?? [];
   const dirty = pro ? JSON.stringify(proHours) !== savedRaw[pro.id] : false;
+  const specDirty = pro ? JSON.stringify(proSpecs) !== savedSpecRaw[pro.id] : false;
 
   return (
     <div className="space-y-5">
@@ -452,25 +487,28 @@ function StaffView({
 
       {pro && (
         <div className="border border-luxe-border p-4 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-luxe-surface border border-luxe-border flex items-center justify-center text-luxe-muted text-xs">
-                {pro.avatar}
-              </div>
-              <div>
-                <p className="text-luxe-cream text-sm">{pro.name}</p>
-                <p className="text-luxe-muted text-xs">{pro.title}</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-luxe-surface border border-luxe-border flex items-center justify-center text-luxe-muted text-xs">
+              {pro.avatar}
             </div>
-            <button
-              onClick={() => handleSaveHours(pro.id)}
-              disabled={!dirty || pending}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-luxe-border text-luxe-muted hover:border-luxe-cream hover:text-luxe-cream transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Save size={12} /> {dirty ? 'Save Hours' : 'Saved'}
-            </button>
+            <div>
+              <p className="text-luxe-cream text-sm">{pro.name}</p>
+              <p className="text-luxe-muted text-xs">{pro.title}</p>
+            </div>
           </div>
+
+          {/* Working Hours */}
           <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-luxe-muted text-xs tracking-wider uppercase">Working Hours</p>
+              <button
+                onClick={() => handleSaveHours(pro.id)}
+                disabled={!dirty || pending}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-luxe-border text-luxe-muted hover:border-luxe-cream hover:text-luxe-cream transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Save size={12} /> {dirty ? 'Save Hours' : 'Saved'}
+              </button>
+            </div>
             {days.map((day, idx) => {
               const h = proHours[idx];
               const isOn = h !== null && h !== undefined;
@@ -497,6 +535,43 @@ function StaffView({
               );
             })}
           </div>
+
+          {/* Services / Specialties */}
+          {services.length > 0 && (
+            <div className="border-t border-luxe-border pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-luxe-muted text-xs tracking-wider uppercase">Services</p>
+                <button
+                  onClick={() => handleSaveSpecialties(pro.id)}
+                  disabled={!specDirty || pending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-luxe-border text-luxe-muted hover:border-luxe-cream hover:text-luxe-cream transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Save size={12} /> {specDirty ? 'Save Services' : 'Saved'}
+                </button>
+              </div>
+              <p className="text-luxe-muted text-[10px]">Unchecked = can perform all services</p>
+              <div className="grid grid-cols-2 gap-2">
+                {services.map(svc => {
+                  const checked = proSpecs.includes(svc.id);
+                  return (
+                    <label key={svc.id} className="flex items-center gap-2 cursor-pointer group">
+                      <div
+                        onClick={() => toggleSpecialty(selectedPro, svc.id)}
+                        className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${
+                          checked ? 'border-luxe-cream bg-luxe-cream' : 'border-luxe-border group-hover:border-luxe-muted'
+                        }`}
+                      >
+                        {checked && <Check size={10} className="text-luxe-bg" />}
+                      </div>
+                      <span className={`text-xs truncate transition-colors ${checked ? 'text-luxe-cream' : 'text-luxe-muted group-hover:text-luxe-cream'}`}>
+                        {svc.name}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -509,9 +584,10 @@ function StaffView({
 
 // ─── Services Tab ─────────────────────────────────────────────────────────────
 function ServicesView({
-  services, departmentId, onAdd, onRemove,
+  services, staff, departmentId, onAdd, onRemove,
 }: {
   services: DBService[];
+  staff: DBStaff[];
   departmentId: string;
   onAdd: (s: DBService) => void;
   onRemove: (id: string) => void;
@@ -554,29 +630,46 @@ function ServicesView({
 
   return (
     <div className="space-y-3">
-      {services.map(svc => (
-        <div key={svc.id} className="flex items-start gap-4 p-4 border border-luxe-border">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-luxe-cream text-sm">{svc.name}</p>
-                {svc.tagline && <p className="text-luxe-muted text-xs mt-0.5">{svc.tagline}</p>}
-              </div>
-              <div className="flex items-start gap-3 shrink-0">
-                <div className="text-right">
-                  <p className="text-luxe-accent text-sm">₾{svc.price}</p>
-                  <p className="text-luxe-muted text-xs flex items-center gap-1 mt-0.5">
-                    <Clock size={10} /> {svc.duration}m
+      {services.map(svc => {
+        const assigned = staff.filter(p => {
+          try { const s = JSON.parse(p.specialties) as string[]; return s.length === 0 || s.includes(svc.id); }
+          catch { return true; }
+        });
+        const assignedLabel = staff.length === 0
+          ? 'No staff yet'
+          : assigned.length === staff.length
+            ? 'All specialists'
+            : assigned.length === 0
+              ? 'No one assigned'
+              : assigned.map(p => p.name.split(' ')[0]).join(', ');
+
+        return (
+          <div key={svc.id} className="flex items-start gap-4 p-4 border border-luxe-border">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-luxe-cream text-sm">{svc.name}</p>
+                  {svc.tagline && <p className="text-luxe-muted text-xs mt-0.5">{svc.tagline}</p>}
+                  <p className="text-luxe-muted text-xs mt-1">
+                    <span className="text-luxe-border">Specialists: </span>{assignedLabel}
                   </p>
                 </div>
-                <button onClick={() => handleRemove(svc.id)} disabled={pending} className="text-luxe-border hover:text-red-400 transition-colors mt-0.5 disabled:opacity-40" title="Remove">
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-start gap-3 shrink-0">
+                  <div className="text-right">
+                    <p className="text-luxe-accent text-sm">₾{svc.price}</p>
+                    <p className="text-luxe-muted text-xs flex items-center gap-1 mt-0.5">
+                      <Clock size={10} /> {svc.duration}m
+                    </p>
+                  </div>
+                  <button onClick={() => handleRemove(svc.id)} disabled={pending} className="text-luxe-border hover:text-red-400 transition-colors mt-0.5 disabled:opacity-40" title="Remove">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {adding ? (
         <div className="border border-luxe-border p-4 space-y-3">
@@ -624,6 +717,7 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
   const [staff, setStaff] = useState<DBStaff[]>([]);
   const [services, setServices] = useState<DBService[]>([]);
   const [bookings, setBookings] = useState<DBBooking[]>([]);
+  const [salon, setSalon] = useState<DBSalon | null>(null);
   const [loading, setLoading] = useState(true);
   const [, startTransition] = useTransition();
 
@@ -634,11 +728,13 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
       getStaff(departmentId),
       getServices(departmentId),
       getBookings(departmentId),
-    ]).then(([s, sv, b]) => {
+      getSalonById(departmentId),
+    ]).then(([s, sv, b, sl]) => {
       if (cancelled) return;
       setStaff(s);
       setServices(sv);
       setBookings(b);
+      setSalon(sl);
     }).catch(e => {
       console.error('Admin data load failed', e);
     }).finally(() => {
@@ -646,8 +742,6 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
     });
     return () => { cancelled = true; };
   }, [departmentId]);
-
-  const dept = DEPARTMENTS.find(d => d.id === departmentId) ?? null;
 
   function handleStatusChange(id: string, status: BookingStatus) {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
@@ -689,7 +783,7 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
         <header className="flex items-center justify-between px-6 py-5 border-b border-luxe-border">
           <div>
             <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
-            {dept && <p className="text-luxe-muted text-xs mt-0.5">{dept.name}</p>}
+            {salon && <p className="text-luxe-muted text-xs mt-0.5">{salon.name}</p>}
           </div>
           <form action={logoutAction}>
             <button type="submit" className="flex items-center gap-2 text-luxe-muted text-xs tracking-widest uppercase hover:text-luxe-cream transition-colors">
@@ -717,19 +811,22 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
         {loading && <p className="text-luxe-muted text-sm text-center py-8">Loading…</p>}
         {!loading && tab === 'today' && <TodayView bookings={bookings} services={services} professionals={staff} />}
         {!loading && tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} services={services} professionals={staff} />}
-        {!loading && tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} onStatusChange={handleStatusChange} onDelete={handleDeleteBooking} />}
+        {!loading && tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} salonName={salon?.name ?? ''} onStatusChange={handleStatusChange} onDelete={handleDeleteBooking} />}
         {!loading && tab === 'staff' && (
           <StaffView
             staff={staff}
+            services={services}
             departmentId={departmentId}
             onAdd={p => setStaff(prev => [...prev, p])}
             onRemove={id => setStaff(prev => prev.filter(p => p.id !== id))}
             onHoursSaved={(id, raw) => setStaff(prev => prev.map(p => p.id === id ? { ...p, working_hours: raw } : p))}
+            onSpecialtiesSaved={(id, raw) => setStaff(prev => prev.map(p => p.id === id ? { ...p, specialties: raw } : p))}
           />
         )}
         {!loading && tab === 'services' && (
           <ServicesView
             services={services}
+            staff={staff}
             departmentId={departmentId}
             onAdd={s => setServices(prev => [...prev, s])}
             onRemove={id => setServices(prev => prev.filter(s => s.id !== id))}

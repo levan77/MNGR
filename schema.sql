@@ -1,3 +1,17 @@
+CREATE TABLE IF NOT EXISTS salons (
+  id              TEXT PRIMARY KEY,
+  slug            TEXT UNIQUE NOT NULL,
+  name            TEXT NOT NULL,
+  city            TEXT NOT NULL DEFAULT '',
+  address         TEXT NOT NULL DEFAULT '',
+  admin_username  TEXT UNIQUE NOT NULL,
+  admin_password  TEXT NOT NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_salons_slug ON salons(slug);
+CREATE INDEX IF NOT EXISTS idx_salons_username ON salons(admin_username);
+
 CREATE TABLE IF NOT EXISTS services (
   id           TEXT PRIMARY KEY,
   department_id TEXT NOT NULL,

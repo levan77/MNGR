@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Check, Phone, MapPin, Clock, Star } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Phone, Clock, Star } from 'lucide-react';
 import {
-  DEPARTMENTS, ALL_TIME_SLOTS,
-  type Department, type WorkingHours,
+  ALL_TIME_SLOTS,
+  type WorkingHours,
 } from '@/lib/data';
 import { localDateString, getWeekDays, formatShortDate, formatLongDate, getDayOfWeek, timeToMinutes } from '@/lib/dates';
 import { isValidName, isValidPhone, formatPhone } from '@/lib/validation';
@@ -13,13 +13,21 @@ import {
 } from '@/app/booking/actions';
 import type { DBService, DBStaff, DBBooking } from '@/app/admin/actions';
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+type Step = 1 | 2 | 3 | 4 | 5;
+
+export type BookingSalon = {
+  id: string;
+  slug: string;
+  name: string;
+  city: string;
+  address: string;
+};
 
 type ConfirmedBooking = {
   reference: string;
   service: DBService;
   professional: DBStaff;
-  department: Department;
+  salon: BookingSalon;
   date: string;
   time: string;
   clientName: string;
@@ -68,52 +76,24 @@ function getAvailableSlots(
   });
 }
 
-// ─── Step 1: Department ───────────────────────────────────────────────────────
-function StepDepartment({ onSelect }: { onSelect: (d: Department) => void }) {
-  return (
-    <div className="space-y-6">
-      <div className="text-center space-y-1">
-        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 1 of 5</p>
-        <h2 className="text-2xl font-display tracking-wider">Choose Location</h2>
-      </div>
-      <div className="grid gap-3">
-        {DEPARTMENTS.map(dept => (
-          <button
-            key={dept.id}
-            onClick={() => onSelect(dept)}
-            className="flex items-start gap-4 p-5 border border-luxe-border hover:border-luxe-cream text-left transition-colors duration-150 group"
-          >
-            <MapPin size={18} className="text-luxe-muted group-hover:text-luxe-cream mt-0.5 shrink-0 transition-colors" />
-            <div>
-              <p className="text-luxe-cream font-medium tracking-wide">{dept.name}</p>
-              <p className="text-luxe-muted text-sm mt-0.5">{dept.address}</p>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Step 2: Service ──────────────────────────────────────────────────────────
+// ─── Step 1: Service ──────────────────────────────────────────────────────────
 function StepService({
-  services, loading, onSelect, onBack,
+  services, loading, onSelect,
 }: {
   services: DBService[];
   loading: boolean;
   onSelect: (s: DBService) => void;
-  onBack: () => void;
 }) {
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
-        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 2 of 5</p>
+        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 1 of 4</p>
         <h2 className="text-2xl font-display tracking-wider">Choose Service</h2>
       </div>
       {loading ? (
         <p className="text-luxe-muted text-center py-8 text-sm">Loading services…</p>
       ) : services.length === 0 ? (
-        <p className="text-luxe-muted text-center py-8 text-sm">No services available at this location yet.</p>
+        <p className="text-luxe-muted text-center py-8 text-sm">No services available yet.</p>
       ) : (
         <div className="grid gap-3">
           {services.map(svc => (
@@ -136,14 +116,11 @@ function StepService({
           ))}
         </div>
       )}
-      <button onClick={onBack} className="flex items-center gap-2 text-luxe-muted hover:text-luxe-cream text-sm transition-colors">
-        <ArrowLeft size={14} /> Back
-      </button>
     </div>
   );
 }
 
-// ─── Step 3: Professional ─────────────────────────────────────────────────────
+// ─── Step 2: Professional ─────────────────────────────────────────────────────
 function StepProfessional({
   staff, loading, onSelect, onBack,
 }: {
@@ -155,13 +132,13 @@ function StepProfessional({
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
-        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 3 of 5</p>
+        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 2 of 4</p>
         <h2 className="text-2xl font-display tracking-wider">Choose Professional</h2>
       </div>
       {loading ? (
         <p className="text-luxe-muted text-center py-8 text-sm">Loading…</p>
       ) : staff.length === 0 ? (
-        <p className="text-luxe-muted text-center py-8 text-sm">No professionals available at this location.</p>
+        <p className="text-luxe-muted text-center py-8 text-sm">No professionals available.</p>
       ) : (
         <div className="grid gap-3">
           {staff.map(pro => (
@@ -191,14 +168,14 @@ function StepProfessional({
   );
 }
 
-// ─── Step 4: Schedule ─────────────────────────────────────────────────────────
+// ─── Step 3: Schedule ─────────────────────────────────────────────────────────
 function StepSchedule({
-  professional, service, services, departmentId, onSelect, onBack,
+  professional, service, services, salonId, onSelect, onBack,
 }: {
   professional: DBStaff;
   service: DBService;
   services: DBService[];
-  departmentId: string;
+  salonId: string;
   onSelect: (date: string, time: string) => void;
   onBack: () => void;
 }) {
@@ -211,10 +188,10 @@ function StepSchedule({
 
   useEffect(() => {
     setLoadingBookings(true);
-    publicGetBookings(departmentId, professional.id)
+    publicGetBookings(salonId, professional.id)
       .then(setBookings)
       .finally(() => setLoadingBookings(false));
-  }, [departmentId, professional.id]);
+  }, [salonId, professional.id]);
 
   let staffHours: WorkingHours[] | null = null;
   try { staffHours = JSON.parse(professional.working_hours) as WorkingHours[]; } catch {}
@@ -234,7 +211,7 @@ function StepSchedule({
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
-        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 4 of 5</p>
+        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 3 of 4</p>
         <h2 className="text-2xl font-display tracking-wider">Choose Date & Time</h2>
       </div>
 
@@ -303,7 +280,7 @@ function StepSchedule({
   );
 }
 
-// ─── Step 5: Details ──────────────────────────────────────────────────────────
+// ─── Step 4: Details ──────────────────────────────────────────────────────────
 function StepDetails({
   onConfirm, onBack, submitting, error,
 }: {
@@ -328,7 +305,7 @@ function StepDetails({
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
-        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 5 of 5</p>
+        <p className="text-luxe-muted text-xs tracking-widest uppercase">Step 4 of 4</p>
         <h2 className="text-2xl font-display tracking-wider">Your Details</h2>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -372,7 +349,7 @@ function StepDetails({
   );
 }
 
-// ─── Step 6: Confirmation ─────────────────────────────────────────────────────
+// ─── Step 5: Confirmation ─────────────────────────────────────────────────────
 function StepConfirmation({ booking }: { booking: ConfirmedBooking }) {
   return (
     <div className="space-y-8 text-center">
@@ -390,14 +367,14 @@ function StepConfirmation({ booking }: { booking: ConfirmedBooking }) {
         </div>
         <Row label="Service" value={booking.service.name} />
         <Row label="Professional" value={booking.professional.name} />
-        <Row label="Location" value={booking.department.name} />
+        <Row label="Location" value={booking.salon.name} />
         <Row label="Date" value={formatLongDate(booking.date)} />
         <Row label="Time" value={booking.time} />
         <Row label="Name" value={booking.clientName} />
         <Row label="Phone" value={booking.clientPhone} />
         <Row label="Total" value={`₾ ${booking.service.price}`} />
       </div>
-      <a href="/booking" className="inline-block px-10 py-3 border border-luxe-border text-luxe-muted text-sm tracking-widest uppercase hover:border-luxe-cream hover:text-luxe-cream transition-colors">
+      <a href={`/${booking.salon.slug}`} className="inline-block px-10 py-3 border border-luxe-border text-luxe-muted text-sm tracking-widest uppercase hover:border-luxe-cream hover:text-luxe-cream transition-colors">
         New Booking
       </a>
     </div>
@@ -414,9 +391,8 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function ClientBooking() {
+export default function ClientBooking({ salon }: { salon: BookingSalon }) {
   const [step, setStep] = useState<Step>(1);
-  const [department, setDepartment] = useState<Department | null>(null);
   const [service, setService] = useState<DBService | null>(null);
   const [professional, setProfessional] = useState<DBStaff | null>(null);
   const [date, setDate] = useState<string | null>(null);
@@ -424,33 +400,30 @@ export default function ClientBooking() {
   const [confirmedBooking, setConfirmedBooking] = useState<ConfirmedBooking | null>(null);
   const [services, setServices] = useState<DBService[]>([]);
   const [staff, setStaff] = useState<DBStaff[]>([]);
-  const [loadingServices, setLoadingServices] = useState(false);
-  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [loadingServices, setLoadingServices] = useState(true);
+  const [loadingStaff, setLoadingStaff] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!department) return;
-    setLoadingServices(true);
-    setLoadingStaff(true);
-    publicGetServices(department.id)
+    publicGetServices(salon.id)
       .then(setServices)
       .catch(() => setServices([]))
       .finally(() => setLoadingServices(false));
-    publicGetStaff(department.id)
+    publicGetStaff(salon.id)
       .then(setStaff)
       .catch(() => setStaff([]))
       .finally(() => setLoadingStaff(false));
-  }, [department]);
+  }, [salon.id]);
 
   async function handleConfirm(name: string, phone: string) {
-    if (!department || !professional || !service || !date || !time) return;
+    if (!professional || !service || !date || !time) return;
     setSubmitting(true);
     setSubmitError(null);
     const ref = generateRef();
     try {
       const result = await publicCreateBooking({
-        departmentId: department.id,
+        departmentId: salon.id,
         professionalId: professional.id,
         serviceId: service.id,
         date,
@@ -465,16 +438,10 @@ export default function ClientBooking() {
         return;
       }
       setConfirmedBooking({
-        reference: ref,
-        service,
-        professional,
-        department,
-        date,
-        time,
-        clientName: name,
-        clientPhone: phone,
+        reference: ref, service, professional, salon, date, time,
+        clientName: name, clientPhone: phone,
       });
-      setStep(6);
+      setStep(5 as Step);
     } catch (e) {
       setSubmitError('Could not save booking. Please try again. ' + String(e));
     } finally {
@@ -482,8 +449,6 @@ export default function ClientBooking() {
     }
   }
 
-  // Eligible staff for this service in this department.
-  // Staff specialties are stored as JSON array of service IDs.
   const eligibleStaff = service ? staff.filter(p => {
     try {
       const specs = JSON.parse(p.specialties) as string[];
@@ -491,13 +456,19 @@ export default function ClientBooking() {
     } catch { return true; }
   }) : staff;
 
+  const totalSteps = 4;
+  const showProgress = step >= 1 && step <= totalSteps;
+
   return (
     <div className="min-h-screen bg-luxe-bg flex flex-col">
       <header className="flex items-center justify-between px-6 py-5 border-b border-luxe-border">
-        <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
-        {step < 6 && (
+        <div>
+          <a href="/" className="text-xl font-display tracking-[0.3em] text-luxe-cream">ATELIER</a>
+          <p className="text-luxe-muted text-xs mt-0.5">{salon.name}{salon.city ? ` · ${salon.city}` : ''}</p>
+        </div>
+        {showProgress && (
           <div className="flex gap-1.5">
-            {([1, 2, 3, 4, 5] as const).map(s => (
+            {([1, 2, 3, 4] as const).map(s => (
               <div key={s} className={`w-6 h-0.5 transition-colors ${s <= step ? 'bg-luxe-cream' : 'bg-luxe-border'}`} />
             ))}
           </div>
@@ -507,43 +478,39 @@ export default function ClientBooking() {
       <main className="flex-1 flex items-start justify-center px-6 py-10">
         <div className="w-full max-w-md">
           {step === 1 && (
-            <StepDepartment onSelect={d => { setDepartment(d); setStep(2); }} />
-          )}
-          {step === 2 && (
             <StepService
               services={services}
               loading={loadingServices}
-              onSelect={s => { setService(s); setStep(3); }}
-              onBack={() => setStep(1)}
+              onSelect={s => { setService(s); setStep(2); }}
             />
           )}
-          {step === 3 && department && service && (
+          {step === 2 && service && (
             <StepProfessional
               staff={eligibleStaff}
               loading={loadingStaff}
-              onSelect={p => { setProfessional(p); setStep(4); }}
-              onBack={() => setStep(2)}
+              onSelect={p => { setProfessional(p); setStep(3); }}
+              onBack={() => setStep(1)}
             />
           )}
-          {step === 4 && professional && service && department && (
+          {step === 3 && professional && service && (
             <StepSchedule
               professional={professional}
               service={service}
               services={services}
-              departmentId={department.id}
-              onSelect={(d, t) => { setDate(d); setTime(t); setStep(5); }}
-              onBack={() => setStep(3)}
+              salonId={salon.id}
+              onSelect={(d, t) => { setDate(d); setTime(t); setStep(4); }}
+              onBack={() => setStep(2)}
             />
           )}
-          {step === 5 && (
+          {step === 4 && (
             <StepDetails
               onConfirm={handleConfirm}
-              onBack={() => { setSubmitError(null); setStep(4); }}
+              onBack={() => { setSubmitError(null); setStep(3); }}
               submitting={submitting}
               error={submitError}
             />
           )}
-          {step === 6 && confirmedBooking && (
+          {step === 5 && confirmedBooking && (
             <StepConfirmation booking={confirmedBooking} />
           )}
         </div>

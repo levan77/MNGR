@@ -9,29 +9,29 @@ async function getDB(): Promise<D1Database> {
   return env.DB;
 }
 
-export async function publicGetServices(departmentId: string): Promise<DBService[]> {
+export async function publicGetServices(salonId: string): Promise<DBService[]> {
   const db = await getDB();
   const { results } = await db
     .prepare('SELECT * FROM services WHERE department_id = ? ORDER BY created_at ASC')
-    .bind(departmentId)
+    .bind(salonId)
     .all<DBService>();
   return results;
 }
 
-export async function publicGetStaff(departmentId: string): Promise<DBStaff[]> {
+export async function publicGetStaff(salonId: string): Promise<DBStaff[]> {
   const db = await getDB();
   const { results } = await db
     .prepare('SELECT * FROM staff WHERE department_id = ? ORDER BY created_at ASC')
-    .bind(departmentId)
+    .bind(salonId)
     .all<DBStaff>();
   return results;
 }
 
-export async function publicGetBookings(departmentId: string, professionalId: string): Promise<DBBooking[]> {
+export async function publicGetBookings(salonId: string, professionalId: string): Promise<DBBooking[]> {
   const db = await getDB();
   const { results } = await db
     .prepare("SELECT * FROM bookings WHERE department_id = ? AND professional_id = ? AND status NOT IN ('cancelled','no_show')")
-    .bind(departmentId, professionalId)
+    .bind(salonId, professionalId)
     .all<DBBooking>();
   return results;
 }
@@ -56,16 +56,20 @@ export async function publicCreateBooking(data: {
   const id = `b-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const db = await getDB();
 
-  const conflict = await db
-    .prepare("SELECT id FROM bookings WHERE department_id = ? AND professional_id = ? AND date = ? AND time = ? AND status NOT IN ('cancelled','no_show') LIMIT 1")
-    .bind(data.departmentId, data.professionalId, data.date, data.time)
-    .first<{ id: string }>();
-  if (conflict) return { ok: false, error: 'Slot just got booked — please pick another' };
+  try {
+    const conflict = await db
+      .prepare("SELECT id FROM bookings WHERE department_id = ? AND professional_id = ? AND date = ? AND time = ? AND status NOT IN ('cancelled','no_show') LIMIT 1")
+      .bind(data.departmentId, data.professionalId, data.date, data.time)
+      .first<{ id: string }>();
+    if (conflict) return { ok: false, error: 'Slot just got booked — please pick another' };
 
-  await db
-    .prepare('INSERT INTO bookings (id, department_id, professional_id, service_id, date, time, client_name, client_phone, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, data.departmentId, data.professionalId, data.serviceId, data.date, data.time, data.clientName, data.clientPhone, data.reference)
-    .run();
+    await db
+      .prepare('INSERT INTO bookings (id, department_id, professional_id, service_id, date, time, client_name, client_phone, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, data.departmentId, data.professionalId, data.serviceId, data.date, data.time, data.clientName, data.clientPhone, data.reference)
+      .run();
+  } catch (e) {
+    return { ok: false, error: 'Database error: ' + String(e) };
+  }
 
   return { ok: true, id };
 }
