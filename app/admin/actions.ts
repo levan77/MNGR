@@ -55,9 +55,12 @@ async function getDB(): Promise<D1Database> {
   return env.DB;
 }
 
+async function getSession() {
+  return validateRequest((await cookies()).toString());
+}
+
 async function requireSalonAccess(departmentId: string): Promise<void> {
-  const cookieHeader = (await cookies()).toString();
-  const session = await validateRequest(cookieHeader);
+  const session = await getSession();
   if (!session) throw new Error('Unauthorized');
   if (session.role === 'super_admin') return;
   if (session.role === 'salon_admin' && session.salon_id === departmentId) return;
@@ -65,8 +68,7 @@ async function requireSalonAccess(departmentId: string): Promise<void> {
 }
 
 async function requireSuperAdmin(): Promise<void> {
-  const cookieHeader = (await cookies()).toString();
-  const session = await validateRequest(cookieHeader);
+  const session = await getSession();
   if (!session || session.role !== 'super_admin') throw new Error('Forbidden — super admin only');
 }
 
@@ -130,13 +132,14 @@ export async function createSalon(data: {
   if (userTaken) return { ok: false, error: `Username "${username}" is already in use` };
 
   const id = `sal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const city = data.city?.trim() ?? '';
+  const address = data.address?.trim() ?? '';
   await db
     .prepare('INSERT INTO salons (id, slug, name, city, address, admin_username, admin_password) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, slug, name, data.city?.trim() ?? '', data.address?.trim() ?? '', username, password)
+    .bind(id, slug, name, city, address, username, password)
     .run();
 
-  const salon = await getSalonById(id);
-  if (!salon) return { ok: false, error: 'Created but failed to fetch' };
+  const salon: DBSalon = { id, slug, name, city, address, admin_username: username, admin_password: password, created_at: new Date().toISOString() };
   return { ok: true, salon };
 }
 
@@ -180,8 +183,8 @@ export async function updateSalon(id: string, data: {
     .bind(next.name, next.slug, next.city, next.address, next.admin_username, next.admin_password, id)
     .run();
 
-  const salon = await getSalonById(id);
-  return salon ? { ok: true, salon } : { ok: false, error: 'Updated but fetch failed' };
+  const salon: DBSalon = { ...existing, ...next };
+  return { ok: true, salon };
 }
 
 export async function deleteSalon(id: string): Promise<void> {

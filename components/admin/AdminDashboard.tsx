@@ -5,7 +5,7 @@ import {
   LayoutGrid, Calendar, List, Users, Scissors,
   ChevronLeft, ChevronRight, Clock, LogOut, Plus, Trash2, X, Save, Check,
 } from 'lucide-react';
-import { ALL_TIME_SLOTS, type BookingStatus, type WorkingHours } from '@/lib/data';
+import { ALL_TIME_SLOTS, parseSpecialties, type BookingStatus, type WorkingHours } from '@/lib/data';
 import { localDateString, getWeekDays, formatShortDate } from '@/lib/dates';
 import { logoutAction } from '@/app/admin/login/actions';
 import {
@@ -307,28 +307,23 @@ function StaffView({
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   useEffect(() => {
-    setHoursMap(prev => {
-      const next: Record<string, WorkingHours[]> = {};
-      const sav: Record<string, string> = {};
-      for (const p of staff) {
-        next[p.id] = prev[p.id] ?? parseHours(p.working_hours);
-        sav[p.id] = p.working_hours;
-      }
-      setSavedRaw(sav);
-      return next;
-    });
-    setSpecialtiesMap(prev => {
-      const next: Record<string, string[]> = {};
-      const sav: Record<string, string> = {};
-      for (const p of staff) {
-        try { next[p.id] = prev[p.id] ?? JSON.parse(p.specialties); } catch { next[p.id] = []; }
-        sav[p.id] = p.specialties;
-      }
-      setSavedSpecRaw(sav);
-      return next;
-    });
+    const newHours: Record<string, WorkingHours[]> = {};
+    const savedHours: Record<string, string> = {};
+    const newSpecs: Record<string, string[]> = {};
+    const savedSpecs: Record<string, string> = {};
+    for (const p of staff) {
+      newHours[p.id] = hoursMap[p.id] ?? parseHours(p.working_hours);
+      savedHours[p.id] = p.working_hours;
+      newSpecs[p.id] = specialtiesMap[p.id] ?? parseSpecialties(p.specialties);
+      savedSpecs[p.id] = p.specialties;
+    }
+    setHoursMap(newHours);
+    setSavedRaw(savedHours);
+    setSpecialtiesMap(newSpecs);
+    setSavedSpecRaw(savedSpecs);
     if (!selectedPro && staff[0]) setSelectedPro(staff[0].id);
     if (selectedPro && !staff.find(p => p.id === selectedPro)) setSelectedPro(staff[0]?.id ?? '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staff, selectedPro]);
 
   function toggle(proId: string, dayIdx: number) {
@@ -497,7 +492,6 @@ function StaffView({
             </div>
           </div>
 
-          {/* Working Hours */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-luxe-muted text-xs tracking-wider uppercase">Working Hours</p>
@@ -536,7 +530,6 @@ function StaffView({
             })}
           </div>
 
-          {/* Services / Specialties */}
           {services.length > 0 && (
             <div className="border-t border-luxe-border pt-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -555,12 +548,15 @@ function StaffView({
                   const checked = proSpecs.includes(svc.id);
                   return (
                     <label key={svc.id} className="flex items-center gap-2 cursor-pointer group">
-                      <div
-                        onClick={() => toggleSpecialty(selectedPro, svc.id)}
-                        className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${
-                          checked ? 'border-luxe-cream bg-luxe-cream' : 'border-luxe-border group-hover:border-luxe-muted'
-                        }`}
-                      >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSpecialty(selectedPro, svc.id)}
+                        className="sr-only"
+                      />
+                      <div className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${
+                        checked ? 'border-luxe-cream bg-luxe-cream' : 'border-luxe-border group-hover:border-luxe-muted'
+                      }`}>
                         {checked && <Check size={10} className="text-luxe-bg" />}
                       </div>
                       <span className={`text-xs truncate transition-colors ${checked ? 'text-luxe-cream' : 'text-luxe-muted group-hover:text-luxe-cream'}`}>
@@ -632,16 +628,14 @@ function ServicesView({
     <div className="space-y-3">
       {services.map(svc => {
         const assigned = staff.filter(p => {
-          try { const s = JSON.parse(p.specialties) as string[]; return s.length === 0 || s.includes(svc.id); }
-          catch { return true; }
+          const specs = parseSpecialties(p.specialties);
+          return specs.length === 0 || specs.includes(svc.id);
         });
-        const assignedLabel = staff.length === 0
-          ? 'No staff yet'
-          : assigned.length === staff.length
-            ? 'All specialists'
-            : assigned.length === 0
-              ? 'No one assigned'
-              : assigned.map(p => p.name.split(' ')[0]).join(', ');
+        let assignedLabel: string;
+        if (staff.length === 0) assignedLabel = 'No staff yet';
+        else if (assigned.length === 0) assignedLabel = 'No one assigned';
+        else if (assigned.length === staff.length) assignedLabel = 'All specialists';
+        else assignedLabel = assigned.map(p => p.name.split(' ')[0]).join(', ');
 
         return (
           <div key={svc.id} className="flex items-start gap-4 p-4 border border-luxe-border">

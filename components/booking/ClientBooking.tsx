@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Check, Phone, Clock, Star } from 'lucide-react';
 import {
-  ALL_TIME_SLOTS,
+  ALL_TIME_SLOTS, parseSpecialties,
   type WorkingHours,
 } from '@/lib/data';
 import { localDateString, getWeekDays, formatShortDate, formatLongDate, getDayOfWeek, timeToMinutes } from '@/lib/dates';
@@ -450,10 +450,8 @@ export default function ClientBooking({ salon }: { salon: BookingSalon }) {
   }
 
   const eligibleStaff = service ? staff.filter(p => {
-    try {
-      const specs = JSON.parse(p.specialties) as string[];
-      return specs.length === 0 || specs.includes(service.id);
-    } catch { return true; }
+    const specs = parseSpecialties(p.specialties);
+    return specs.length === 0 || specs.includes(service.id);
   }) : staff;
 
   const totalSteps = 4;
