@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useRef, useTransition } from 'react';
 import {
   LayoutGrid, Calendar, List, Users, Scissors,
   ChevronLeft, ChevronRight, Clock, LogOut, Plus, Trash2, X, Save, Check,
@@ -190,12 +190,11 @@ function CalendarView({
 
 // ─── Bookings Tab ─────────────────────────────────────────────────────────────
 function BookingsView({
-  bookings, professionals, services, salonName, onStatusChange, onDelete,
+  bookings, professionals, services, onStatusChange, onDelete,
 }: {
   bookings: DBBooking[];
   professionals: DBStaff[];
   services: DBService[];
-  salonName: string;
   onStatusChange: (id: string, status: BookingStatus) => void;
   onDelete: (id: string) => void;
 }) {
@@ -252,7 +251,6 @@ function BookingsView({
                 <span className="text-luxe-muted">{b.date} · {b.time}</span>
                 <span className="text-luxe-muted truncate">{svc?.name ?? '—'}</span>
                 <span className="text-luxe-muted truncate">{pro?.name ?? '—'}</span>
-                <span className="text-luxe-muted truncate">{salonName}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-luxe-accent text-xs">{b.reference}</span>
@@ -306,15 +304,22 @@ function StaffView({
   const [pending, startTransition] = useTransition();
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  // Refs give the effect access to the latest map values without adding them
+  // to the dependency array (which would cause an infinite loop).
+  const hoursMapRef = useRef(hoursMap);
+  hoursMapRef.current = hoursMap;
+  const specialtiesMapRef = useRef(specialtiesMap);
+  specialtiesMapRef.current = specialtiesMap;
+
   useEffect(() => {
     const newHours: Record<string, WorkingHours[]> = {};
     const savedHours: Record<string, string> = {};
     const newSpecs: Record<string, string[]> = {};
     const savedSpecs: Record<string, string> = {};
     for (const p of staff) {
-      newHours[p.id] = hoursMap[p.id] ?? parseHours(p.working_hours);
+      newHours[p.id] = hoursMapRef.current[p.id] ?? parseHours(p.working_hours);
       savedHours[p.id] = p.working_hours;
-      newSpecs[p.id] = specialtiesMap[p.id] ?? parseSpecialties(p.specialties);
+      newSpecs[p.id] = specialtiesMapRef.current[p.id] ?? parseSpecialties(p.specialties);
       savedSpecs[p.id] = p.specialties;
     }
     setHoursMap(newHours);
@@ -323,7 +328,6 @@ function StaffView({
     setSavedSpecRaw(savedSpecs);
     if (!selectedPro && staff[0]) setSelectedPro(staff[0].id);
     if (selectedPro && !staff.find(p => p.id === selectedPro)) setSelectedPro(staff[0]?.id ?? '');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staff, selectedPro]);
 
   function toggle(proId: string, dayIdx: number) {
@@ -805,7 +809,7 @@ export default function AdminDashboard({ departmentId, showHeader = true }: Admi
         {loading && <p className="text-luxe-muted text-sm text-center py-8">Loading…</p>}
         {!loading && tab === 'today' && <TodayView bookings={bookings} services={services} professionals={staff} />}
         {!loading && tab === 'calendar' && <CalendarView bookings={bookings} onStatusChange={handleStatusChange} services={services} professionals={staff} />}
-        {!loading && tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} salonName={salon?.name ?? ''} onStatusChange={handleStatusChange} onDelete={handleDeleteBooking} />}
+        {!loading && tab === 'bookings' && <BookingsView bookings={bookings} professionals={staff} services={services} onStatusChange={handleStatusChange} onDelete={handleDeleteBooking} />}
         {!loading && tab === 'staff' && (
           <StaffView
             staff={staff}

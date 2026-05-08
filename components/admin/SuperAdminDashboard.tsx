@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Building2, ChevronRight, LogOut, ArrowLeft, Plus, Trash2, Pencil, Save, X, ExternalLink } from 'lucide-react';
 import { logoutAction } from '@/app/admin/login/actions';
 import {
@@ -30,26 +30,34 @@ export default function SuperAdminDashboard() {
   const [bookings, setBookings] = useState<DBBooking[]>([]);
   const [servicesByDept, setServicesByDept] = useState<Record<string, DBService[]>>({});
   const [loading, setLoading] = useState(true);
+  const cancelledRef = useRef(false);
 
   async function reload() {
+    cancelledRef.current = false;
     setLoading(true);
     try {
       const fresh = await getSalons();
+      if (cancelledRef.current) return;
       setSalons(fresh);
       const [allBks, perDept] = await Promise.all([
         getAllBookings(),
         Promise.all(fresh.map(s => getServices(s.id).then(svc => [s.id, svc] as const))),
       ]);
+      if (cancelledRef.current) return;
       setBookings(allBks);
       setServicesByDept(Object.fromEntries(perDept));
     } catch (e) {
       console.error('Super admin load failed', e);
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) setLoading(false);
     }
   }
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    return () => { cancelledRef.current = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const selectedSalon = selectedId ? salons.find(s => s.id === selectedId) ?? null : null;
 

@@ -72,6 +72,50 @@ async function requireSuperAdmin(): Promise<void> {
   if (!session || session.role !== 'super_admin') throw new Error('Forbidden — super admin only');
 }
 
+// ─── Password hashing (PBKDF2 via Web Crypto — works in CF Workers) ──────────
+
+const PBKDF2_ITERS = 100_000;
+const RESERVED_SLUGS = new Set([
+  'admin', 'api', 'booking', '_next', 'favicon.ico', 'favicon.svg',
+  'sitemap.xml', 'robots.txt', 'apple-touch-icon.png', 'login', 'not-found',
+]);
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password),
+    { name: 'PBKDF2' }, false, ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+    key, 256,
+  );
+  const toHex = (buf: Uint8Array) => Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${toHex(salt)}:${toHex(new Uint8Array(bits))}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [saltHex, hashHex] = stored.split(':');
+  if (!saltHex || !hashHex) return false;
+  const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password),
+    { name: 'PBKDF2' }, false, ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+    key, 256,
+  );
+  const newHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+  // Constant-time compare to prevent timing attacks
+  const a = new TextEncoder().encode(newHex);
+  const b = new TextEncoder().encode(hashHex);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 // ─── Salons (super-admin) ─────────────────────────────────────────────────────
 
 function slugify(s: string): string {
@@ -121,9 +165,7 @@ export async function createSalon(data: {
 
   const slug = slugify(data.slug?.trim() || name);
   if (!slug) return { ok: false, error: 'Slug is invalid' };
-  if (['admin', 'api', 'booking', '_next', 'favicon.ico'].includes(slug)) {
-    return { ok: false, error: `Slug "${slug}" is reserved` };
-  }
+  if (RESERVED_SLUGS.has(slug)) return { ok: false, error: `Slug "${slug}" is reserved` };
 
   const db = await getDB();
   const slugTaken = await db.prepare('SELECT id FROM salons WHERE slug = ? LIMIT 1').bind(slug).first<{ id: string }>();
@@ -134,12 +176,15 @@ export async function createSalon(data: {
   const id = `sal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const city = data.city?.trim() ?? '';
   const address = data.address?.trim() ?? '';
+  // SQLite datetime('now') format so created_at is consistent with DB rows
+  const created_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const hashed = await hashPassword(password);
   await db
-    .prepare('INSERT INTO salons (id, slug, name, city, address, admin_username, admin_password) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, slug, name, city, address, username, password)
+    .prepare('INSERT INTO salons (id, slug, name, city, address, admin_username, admin_password, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, slug, name, city, address, username, hashed, created_at)
     .run();
 
-  const salon: DBSalon = { id, slug, name, city, address, admin_username: username, admin_password: password, created_at: new Date().toISOString() };
+  const salon: DBSalon = { id, slug, name, city, address, admin_username: username, admin_password: hashed, created_at };
   return { ok: true, salon };
 }
 
@@ -156,13 +201,17 @@ export async function updateSalon(id: string, data: {
   const existing = await getSalonById(id);
   if (!existing) return { ok: false, error: 'Salon not found' };
 
+  const newPassword = data.adminPassword && data.adminPassword.length > 0
+    ? await hashPassword(data.adminPassword)
+    : existing.admin_password;
+
   const next = {
     name: data.name?.trim() ?? existing.name,
     slug: data.slug !== undefined ? slugify(data.slug) : existing.slug,
     city: data.city?.trim() ?? existing.city,
     address: data.address?.trim() ?? existing.address,
     admin_username: data.adminUsername?.trim().toLowerCase() ?? existing.admin_username,
-    admin_password: data.adminPassword && data.adminPassword.length > 0 ? data.adminPassword : existing.admin_password,
+    admin_password: newPassword,
   };
 
   if (!next.name) return { ok: false, error: 'Name required' };
@@ -201,11 +250,15 @@ export async function deleteSalon(id: string): Promise<void> {
 
 export async function findSalonByLogin(username: string, password: string): Promise<DBSalon | null> {
   const db = await getDB();
+  // Look up by username only, then do a constant-time password hash comparison
+  // to avoid leaking whether the username exists via timing differences.
   const row = await db
-    .prepare('SELECT * FROM salons WHERE admin_username = ? AND admin_password = ? LIMIT 1')
-    .bind(username, password)
+    .prepare('SELECT * FROM salons WHERE admin_username = ? LIMIT 1')
+    .bind(username)
     .first<DBSalon>();
-  return row ?? null;
+  if (!row) return null;
+  const ok = await verifyPassword(password, row.admin_password);
+  return ok ? row : null;
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────
