@@ -90,6 +90,22 @@ export const translations = {
     failed_save_buffer: 'Failed to save buffer: ',
     failed_save_services: 'Failed to save services: ',
 
+    // ── Pro Portal ──
+    portal_login: 'Portal Login',
+    pro_username: 'Username',
+    pro_password: 'New Password',
+    save_credentials: 'Save',
+    credentials_saved: 'Credentials saved',
+    username_active: 'Active',
+    pro_portal: 'Professional Portal',
+    my_schedule: 'My Schedule',
+    my_earnings: 'My Earnings',
+    my_profile: 'My Profile',
+    today_appointments: "Today's Appointments",
+    my_payout: 'My Payout',
+    my_revenue: 'Revenue Generated',
+    bookings_completed: 'Bookings Completed',
+
     // ── Day abbreviations ──
     day_sun: 'Sun',
     day_mon: 'Mon',
@@ -394,6 +410,22 @@ export const translations = {
     failed_save_comp: 'ანაზღაურების შენახვა ვერ მოხდა: ',
     failed_save_buffer: 'ბუფერის შენახვა ვერ მოხდა: ',
     failed_save_services: 'სერვისების შენახვა ვერ მოხდა: ',
+
+    // ── Pro Portal ──
+    portal_login: 'პორტალის შესვლა',
+    pro_username: 'მომხმარებელი',
+    pro_password: 'ახალი პაროლი',
+    save_credentials: 'შენახვა',
+    credentials_saved: 'შენახულია',
+    username_active: 'აქტიური',
+    pro_portal: 'პროფესიონალის პორტალი',
+    my_schedule: 'ჩემი განრიგი',
+    my_earnings: 'ჩემი შემოსავალი',
+    my_profile: 'ჩემი პროფილი',
+    today_appointments: 'დღევანდელი ჩანაწერები',
+    my_payout: 'ჩემი გასამრჯელო',
+    my_revenue: 'გენერირებული შემოსავალი',
+    bookings_completed: 'შესრულებული ჩანაწერები',
 
     // ── Day abbreviations ──
     day_sun: 'კვი',

@@ -11,6 +11,7 @@ import { logoutAction } from '@/app/admin/login/actions';
 import {
   getServices, addService, deleteService, updateServiceBuffer,
   getStaff, addStaffMember, deleteStaffMember, updateStaffHours, updateStaffSpecialties, updateStaffCompensation, updateStaffBufferExtra,
+  updateStaffCredentials,
   getBookings, updateBookingStatus, deleteBooking,
   getServiceAddons, addServiceAddon, deleteServiceAddon,
   getAddonExclusions, toggleAddonExclusion,
@@ -417,6 +418,66 @@ function BookingsView({
 }
 
 // ─── Staff Tab ────────────────────────────────────────────────────────────────
+function CredentialsSection({
+  pro, branchId, pending, startTransition,
+}: {
+  pro: DBStaff;
+  branchId: string;
+  pending: boolean;
+  startTransition: (fn: () => void) => void;
+}) {
+  const { t } = useLanguage();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  function handleSave() {
+    if (!username.trim() || !password) return;
+    setError('');
+    startTransition(async () => {
+      try {
+        const res = await updateStaffCredentials(pro.id, branchId, username, password);
+        if (res.ok) { setSaved(true); setPassword(''); setTimeout(() => setSaved(false), 3000); }
+        else setError(res.error ?? 'Error');
+      } catch (e) { setError(String(e)); }
+    });
+  }
+
+  return (
+    <div className="border-t border-luxe-border pt-4 space-y-3">
+      <p className="text-luxe-muted text-xs uppercase tracking-wider">{t('portal_login')}</p>
+      {pro.pro_username && !saved && (
+        <p className="text-emerald-400 text-[11px]">✓ {t('username_active')}: {pro.pro_username}</p>
+      )}
+      {saved && <p className="text-emerald-400 text-[11px]">✓ {t('credentials_saved')}</p>}
+      {error && <p className="text-red-400 text-[11px]">{error}</p>}
+      <div className="flex gap-2">
+        <input
+          placeholder={t('pro_username')}
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          className="flex-1 bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-1.5 focus:outline-none focus:border-luxe-cream min-w-0"
+        />
+        <input
+          type="password"
+          placeholder={t('pro_password')}
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          className="flex-1 bg-luxe-surface border border-luxe-border text-luxe-cream text-xs px-3 py-1.5 focus:outline-none focus:border-luxe-cream min-w-0"
+        />
+        <button
+          onClick={handleSave}
+          disabled={!username.trim() || !password || pending}
+          className="px-3 py-1.5 text-xs border border-luxe-border text-luxe-muted hover:border-luxe-cream hover:text-luxe-cream transition-colors disabled:opacity-40 shrink-0"
+        >
+          {t('save_credentials')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StaffView({
   staff, services, branchId, allAddons, exclusions,
   onAdd, onRemove, onHoursSaved, onSpecialtiesSaved, onExclusionToggled,
@@ -852,6 +913,17 @@ function StaffView({
                 <span className="text-luxe-muted text-xs">{t('saves_on_blur')}</span>
               </div>
             </div>
+          )}
+
+          {/* Portal Login Credentials */}
+          {pro && (
+            <CredentialsSection
+              key={pro.id}
+              pro={pro}
+              branchId={branchId}
+              pending={pending}
+              startTransition={startTransition}
+            />
           )}
         </div>
       )}

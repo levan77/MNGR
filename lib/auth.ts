@@ -2,7 +2,8 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 export type SessionPayload =
   | { role: 'super_admin' }
-  | { role: 'salon_admin'; salon_id: string };
+  | { role: 'salon_admin'; salon_id: string }
+  | { role: 'professional'; staff_id: string; department_id: string };
 
 const COOKIE = 'admin_session';
 
@@ -70,6 +71,62 @@ export function extractToken(cookieHeader: string | null): string | null {
 export async function validateRequest(cookieHeader: string | null): Promise<SessionPayload | null> {
   const token = extractToken(cookieHeader);
   return token ? verifySession(token) : null;
+}
+
+// ─── PBKDF2 helpers (reused by staff credential verification) ─────────────────
+
+async function pbkdf2Hash(password: string, salt: Uint8Array): Promise<ArrayBuffer> {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'],
+  );
+  return crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: 100_000, hash: 'SHA-256' },
+    keyMaterial, 256,
+  );
+}
+
+function timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  const va = new Uint8Array(a);
+  const vb = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  return diff === 0;
+}
+
+async function verifyPbkdf2(password: string, stored: string): Promise<boolean> {
+  try {
+    const [saltHex, hashHex] = stored.split(':');
+    const salt = Uint8Array.from(saltHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+    const hash = Uint8Array.from(hashHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+    const derived = await pbkdf2Hash(password, salt);
+    return timingSafeEqual(derived, hash.buffer);
+  } catch {
+    return false;
+  }
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pbkdf2Hash(password, salt);
+  const toHex = (buf: Uint8Array) => Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${toHex(salt)}:${toHex(new Uint8Array(hash))}`;
+}
+
+// ─── Staff credential lookup ──────────────────────────────────────────────────
+
+export async function findStaffByLogin(
+  username: string,
+  password: string,
+  db: D1Database,
+): Promise<{ id: string; department_id: string } | null> {
+  const row = await db
+    .prepare('SELECT id, department_id, pro_password FROM staff WHERE pro_username = ? LIMIT 1')
+    .bind(username.toLowerCase())
+    .first<{ id: string; department_id: string; pro_password: string }>();
+  if (!row?.pro_password) return null;
+  const ok = await verifyPbkdf2(password, row.pro_password);
+  return ok ? { id: row.id, department_id: row.department_id } : null;
 }
 
 export { getSecret };

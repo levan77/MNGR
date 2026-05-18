@@ -54,6 +54,7 @@ export type DBStaff = {
   comp_base: number;
   comp_percentage: number;
   buffer_extra: number;
+  pro_username: string | null;
 };
 
 export type DBBooking = {
@@ -84,6 +85,11 @@ async function getDB(): Promise<D1Database> {
   const { env } = await getCloudflareContext<CloudflareEnv>();
   if (!env.DB) throw new Error('D1 binding "DB" is not configured on this Worker');
   return env.DB;
+}
+
+// Exported so login action (and other non-server-action callers) can obtain the DB binding
+export async function getDb(): Promise<D1Database | null> {
+  try { return await getDB(); } catch { return null; }
 }
 
 async function getSession() {
@@ -393,7 +399,7 @@ export async function addStaffMember(data: {
   return {
     id, department_id: data.departmentId, name: data.name, title: data.title,
     avatar: data.avatar, specialties: '[]', working_hours: DEFAULT_HOURS,
-    comp_type: compType, comp_base: compBase, comp_percentage: compPct, buffer_extra: 0,
+    comp_type: compType, comp_base: compBase, comp_percentage: compPct, buffer_extra: 0, pro_username: null,
   };
 }
 
@@ -1151,4 +1157,140 @@ export async function applyMultiTenantMigration(): Promise<{ ok: true; message: 
     );
   }
   return { ok: true, message: `Migration applied. ${salons.length} salon(s) seeded as branches.` };
+}
+
+// ─── Staff Auth Migration ──────────────────────────────────────────────────────
+
+export async function applyStaffAuthMigration(): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const session = await getSession();
+  if (!session || session.role !== 'super_admin') return { ok: false, error: 'Unauthorized' };
+  const db = await getDB();
+  try {
+    await db.batch([
+      db.prepare(`ALTER TABLE staff ADD COLUMN pro_username TEXT`),
+      db.prepare(`ALTER TABLE staff ADD COLUMN pro_password TEXT`),
+    ]);
+    await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_pro_username ON staff(pro_username) WHERE pro_username IS NOT NULL`).run();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+  return { ok: true, message: 'Staff auth columns added.' };
+}
+
+// ─── Staff Credentials (Salon Admin sets username/password for their staff) ───
+
+export async function updateStaffCredentials(
+  staffId: string,
+  departmentId: string,
+  username: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await getSession();
+  if (!session || session.role !== 'salon_admin') return { ok: false, error: 'Unauthorized' };
+
+  const db = await getDB();
+  const { hashPassword } = await import('@/lib/auth');
+
+  const trimmedUsername = username.trim().toLowerCase();
+  if (!trimmedUsername) return { ok: false, error: 'Username required' };
+
+  // Ensure username is unique (excluding this staff member)
+  const existing = await db
+    .prepare('SELECT id FROM staff WHERE pro_username = ? AND id != ? LIMIT 1')
+    .bind(trimmedUsername, staffId)
+    .first<{ id: string }>();
+  if (existing) return { ok: false, error: 'Username already taken' };
+
+  const hashed = await hashPassword(password);
+  await db
+    .prepare('UPDATE staff SET pro_username = ?, pro_password = ? WHERE id = ? AND department_id = ?')
+    .bind(trimmedUsername, hashed, staffId, departmentId)
+    .run();
+
+  revalidatePath('/admin');
+  return { ok: true };
+}
+
+// ─── Professional Portal Actions ──────────────────────────────────────────────
+
+async function requirePro(staffId: string) {
+  const session = await getSession();
+  if (!session || session.role !== 'professional' || session.staff_id !== staffId) {
+    throw new Error('Unauthorized');
+  }
+  return session;
+}
+
+export async function getStaffProfile(staffId: string, departmentId: string): Promise<DBStaff | null> {
+  await requirePro(staffId);
+  const db = await getDB();
+  return db
+    .prepare('SELECT * FROM staff WHERE id = ? AND department_id = ? LIMIT 1')
+    .bind(staffId, departmentId)
+    .first<DBStaff>();
+}
+
+export async function getStaffBookings(
+  staffId: string,
+  departmentId: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<DBBooking[]> {
+  await requirePro(staffId);
+  const db = await getDB();
+  let query = 'SELECT * FROM bookings WHERE professional_id = ? AND department_id = ?';
+  const params: string[] = [staffId, departmentId];
+  if (startDate) { query += ' AND date >= ?'; params.push(startDate); }
+  if (endDate)   { query += ' AND date <= ?'; params.push(endDate); }
+  query += ' ORDER BY date ASC, time ASC';
+  const { results } = await db.prepare(query).bind(...params).all<DBBooking>();
+  return results;
+}
+
+export async function getStaffFinancials(
+  staffId: string,
+  departmentId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{
+  payout: number;
+  revenue: number;
+  completed: number;
+  margin: number;
+} | null> {
+  await requirePro(staffId);
+  const db = await getDB();
+
+  const { results: bookings } = await db
+    .prepare(`
+      SELECT b.status, b.service_id, s.price, s.name as service_name,
+             st.comp_type, st.comp_base, st.comp_percentage
+      FROM bookings b
+      JOIN services s ON b.service_id = s.id
+      JOIN staff st ON b.professional_id = st.id
+      WHERE b.professional_id = ? AND b.department_id = ?
+        AND b.date >= ? AND b.date <= ?
+        AND b.status = 'completed'
+    `)
+    .bind(staffId, departmentId, startDate, endDate)
+    .all<{
+      status: string; service_id: string; price: number;
+      comp_type: string; comp_base: number; comp_percentage: number;
+    }>();
+
+  if (!bookings.length) return { payout: 0, revenue: 0, completed: 0, margin: 0 };
+
+  const revenue = bookings.reduce((s, b) => s + b.price, 0);
+  const completed = bookings.length;
+  const comp_type = bookings[0].comp_type;
+  const comp_base = bookings[0].comp_base;
+  const comp_percentage = bookings[0].comp_percentage;
+
+  let payout = 0;
+  if (comp_type === 'salary') payout = comp_base;
+  else if (comp_type === 'commission') payout = revenue * (comp_percentage / 100);
+  else payout = comp_base + revenue * (comp_percentage / 100); // hybrid
+
+  const margin = revenue > 0 ? ((revenue - payout) / revenue) * 100 : 0;
+  return { payout, revenue, completed, margin };
 }

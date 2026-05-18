@@ -7,14 +7,25 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/admin/login') return NextResponse.next();
 
   const session = await validateRequest(req.headers.get('cookie'));
+  const loginUrl = req.nextUrl.clone();
+  loginUrl.pathname = '/admin/login';
 
-  if (!session) {
-    const url = req.nextUrl.clone();
-    url.pathname = '/admin/login';
-    return NextResponse.redirect(url);
+  if (pathname.startsWith('/pro')) {
+    if (!session || session.role !== 'professional') return NextResponse.redirect(loginUrl);
+
+    const reqHeaders = new Headers(req.headers);
+    reqHeaders.set('x-session-role', 'professional');
+    reqHeaders.set('x-session-staff-id', session.staff_id);
+    reqHeaders.set('x-session-dept-id', session.department_id);
+    return NextResponse.next({ request: { headers: reqHeaders } });
   }
 
-  // Forward session into request headers so server components can read it
+  // /admin/* routes
+  if (!session) return NextResponse.redirect(loginUrl);
+
+  // Professionals should not access admin panel
+  if (session.role === 'professional') return NextResponse.redirect(loginUrl);
+
   const reqHeaders = new Headers(req.headers);
   reqHeaders.set('x-session-role', session.role);
   if (session.role === 'salon_admin') {
@@ -25,5 +36,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin', '/admin/:path*'],
+  matcher: ['/admin', '/admin/:path*', '/pro', '/pro/:path*'],
 };

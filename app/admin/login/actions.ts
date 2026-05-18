@@ -2,9 +2,9 @@
 
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { signSession, getSecret, COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/auth';
+import { signSession, getSecret, findStaffByLogin, COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/auth';
 import type { SessionPayload } from '@/lib/auth';
-import { findSalonByLogin } from '@/app/admin/actions';
+import { findSalonByLogin, getDb } from '@/app/admin/actions';
 
 export async function loginAction(formData: FormData) {
   const username = (formData.get('username') as string)?.trim().toLowerCase();
@@ -13,13 +13,23 @@ export async function loginAction(formData: FormData) {
   if (!username || !password) redirect('/admin/login?error=1');
 
   let payload: SessionPayload | null = null;
+  let redirectTo = '/admin';
 
   if (username === 'master') {
     const masterPw = await getSecret('MASTER_PASSWORD');
     if (masterPw && password === masterPw) payload = { role: 'super_admin' };
   } else {
     const salon = await findSalonByLogin(username, password);
-    if (salon) payload = { role: 'salon_admin', salon_id: salon.id };
+    if (salon) {
+      payload = { role: 'salon_admin', salon_id: salon.id };
+    } else {
+      const db = await getDb();
+      const staff = db ? await findStaffByLogin(username, password, db) : null;
+      if (staff) {
+        payload = { role: 'professional', staff_id: staff.id, department_id: staff.department_id };
+        redirectTo = '/pro';
+      }
+    }
   }
 
   if (!payload) redirect('/admin/login?error=1');
@@ -33,7 +43,7 @@ export async function loginAction(formData: FormData) {
     maxAge: COOKIE_MAX_AGE,
   });
 
-  redirect('/admin');
+  redirect(redirectTo);
 }
 
 export async function logoutAction() {
