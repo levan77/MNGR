@@ -9,25 +9,30 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "supabase:start": "supabase start",
-    "supabase:stop": "supabase stop",
-    "supabase:reset": "supabase db reset"
+    "cf:build": "npx @opennextjs/cloudflare build",
+    "cf:build:fast": "npx @opennextjs/cloudflare build --skipNextBuild",
+    "cf:preview": "npm run cf:build && wrangler dev",
+    "cf:deploy": "npm run cf:build && wrangler deploy",
+    "cf:deploy:fast": "npm run build && npm run cf:build:fast && wrangler deploy"
   },
   "dependencies": {
-    "next": "^14.0.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
     "@supabase/ssr": "^0.0.10",
     "@supabase/supabase-js": "^2.38.0",
-    "lucide-react": "^0.294.0",
-    "clsx": "^2.0.0"
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.460.0",
+    "next": "^15.5.15",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.2.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "tailwindcss": "^3.3.0",
+    "@cloudflare/workers-types": "^4.20260502.1",
+    "@opennextjs/cloudflare": "^1.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
-    "autoprefixer": "^10.4.16"
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5.2.0",
+    "wrangler": "^4.0.0"
   }
 }

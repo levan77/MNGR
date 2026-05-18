@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --luxe-bg: #14110d;
+  --luxe-surface: #1c1915;
+  --luxe-border: #2e2a24;
+  --luxe-cream: #f5efe6;
+  --luxe-muted: #9a9080;
+  --luxe-accent: #c9a96e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: var(--luxe-bg);
+  color: var(--luxe-cream);
+}
+
+body {
+  background-color: var(--luxe-bg);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--luxe-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--luxe-border);
+  border-radius: 2px;
+}
+
+/* Input autofill */
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--luxe-surface) inset;
+  -webkit-text-fill-color: var(--luxe-cream);
+}
+
+select option {
+  background-color: var(--luxe-surface);
+  color: var(--luxe-cream);
+}

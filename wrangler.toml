@@ -1,0 +1,19 @@
+name = "mngr"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+main = ".open-next/worker.js"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mngr-db"
+database_id = "0606b4f3-bb69-41b6-9910-cb5dcc18500e"
+
+[vars]
+# Secrets — set via: npx wrangler secret put SECRET_NAME --name mngr
+#
+# MASTER_PASSWORD  — password for the "master" super admin account
+#                    also used as the HMAC signing key for session cookies
