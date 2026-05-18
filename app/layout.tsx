@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import { Manrope } from 'next/font/google';
 import '@/styles/globals.css';
+import { LanguageProvider } from '@/lib/LanguageContext';
 
 const manrope = Manrope({
-  subsets: ['latin'],
+  subsets: ['latin', 'cyrillic'],
   variable: '--font-manrope',
   display: 'swap',
 });
@@ -15,9 +16,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={manrope.variable}>
+    <html lang="ka" className={manrope.variable}>
       <body className="bg-luxe-bg text-luxe-cream font-sans antialiased">
-        {children}
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
       </body>
     </html>
   );

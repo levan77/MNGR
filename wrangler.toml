@@ -15,10 +15,5 @@ database_id = "0606b4f3-bb69-41b6-9910-cb5dcc18500e"
 [vars]
 # Secrets — set via: npx wrangler secret put SECRET_NAME --name mngr
 #
-# MASTER_PASSWORD        — password for the "master" super admin account
-#                          also used as the HMAC signing key for session cookies
-#
-# SALON_CREDENTIALS      — JSON array of salon admin accounts, e.g.:
-#   [{"username":"tbilisi","password":"pw1","salon_id":"d1"},
-#    {"username":"batumi","password":"pw2","salon_id":"d2"},
-#    {"username":"kutaisi","password":"pw3","salon_id":"d3"}]
+# MASTER_PASSWORD  — password for the "master" super admin account
+#                    also used as the HMAC signing key for session cookies

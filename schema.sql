@@ -24,14 +24,17 @@ CREATE TABLE IF NOT EXISTS services (
 );
 
 CREATE TABLE IF NOT EXISTS staff (
-  id            TEXT PRIMARY KEY,
-  department_id TEXT NOT NULL,
-  name          TEXT NOT NULL,
-  title         TEXT NOT NULL DEFAULT 'Stylist',
-  avatar        TEXT NOT NULL DEFAULT '',
-  specialties   TEXT NOT NULL DEFAULT '[]',
-  working_hours TEXT NOT NULL DEFAULT '[]',
-  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  id             TEXT PRIMARY KEY,
+  department_id  TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  title          TEXT NOT NULL DEFAULT 'Stylist',
+  avatar         TEXT NOT NULL DEFAULT '',
+  specialties    TEXT NOT NULL DEFAULT '[]',
+  working_hours  TEXT NOT NULL DEFAULT '[]',
+  comp_type      TEXT NOT NULL DEFAULT 'commission',
+  comp_base      INTEGER NOT NULL DEFAULT 0,
+  comp_percentage INTEGER NOT NULL DEFAULT 50,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -52,3 +55,4 @@ CREATE INDEX IF NOT EXISTS idx_services_dept  ON services(department_id);
 CREATE INDEX IF NOT EXISTS idx_staff_dept     ON staff(department_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_dept  ON bookings(department_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_date  ON bookings(date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_no_double_booking ON bookings (professional_id, date, time) WHERE status != 'cancelled';

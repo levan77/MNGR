@@ -6,7 +6,7 @@ export type SessionPayload =
 
 const COOKIE = 'admin_session';
 
-async function getSecret(name: 'MASTER_PASSWORD' | 'SALON_CREDENTIALS'): Promise<string | undefined> {
+async function getSecret(name: 'MASTER_PASSWORD'): Promise<string | undefined> {
   try {
     const { env } = await getCloudflareContext<CloudflareEnv>();
     const v = env[name];

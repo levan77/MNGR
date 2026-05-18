@@ -16,6 +16,26 @@ export function parseSpecialties(raw: string): string[] {
   }
 }
 
+/** Parses the JSON working_hours column on a staff row. Returns null on invalid data. */
+export function parseWorkingHours(raw: string): WorkingHours[] | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length === 7 ? (parsed as WorkingHours[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parses the JSON `addons` column on a booking row. Returns [] on error. */
+export function parseBookingAddons(raw: string | null | undefined): Array<{ id: string; name: string; duration: number; price: number }> {
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+
+/** Total addon duration (minutes) from a booking's raw `addons` JSON column. */
+export function bookingAddonDuration(raw: string | null | undefined): number {
+  return parseBookingAddons(raw).reduce((s, a) => s + a.duration, 0);
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const ALL_TIME_SLOTS = [

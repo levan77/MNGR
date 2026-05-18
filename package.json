@@ -10,8 +10,10 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "cf:build": "npx @opennextjs/cloudflare build",
+    "cf:build:fast": "npx @opennextjs/cloudflare build --skipNextBuild",
     "cf:preview": "npm run cf:build && wrangler dev",
-    "cf:deploy": "npm run cf:build && wrangler deploy"
+    "cf:deploy": "npm run cf:build && wrangler deploy",
+    "cf:deploy:fast": "npm run build && npm run cf:build:fast && wrangler deploy"
   },
   "dependencies": {
     "@supabase/ssr": "^0.0.10",

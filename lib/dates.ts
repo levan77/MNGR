@@ -26,6 +26,11 @@ export function formatLongDate(dateStr: string): string {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+export function formatDateDMY(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
 export function getDayOfWeek(dateStr: string): number {
   return new Date(dateStr + 'T00:00:00').getDay();
 }
